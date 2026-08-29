@@ -1,5 +1,6 @@
 // 零依赖静态服务器：node server.js [port]
 const http = require('http')
+const https = require('https')
 const fs = require('fs')
 const path = require('path')
 
@@ -22,9 +23,63 @@ const MIME = {
   '.json': 'application/json',
 }
 
+function aiEndpoint(baseUrl) {
+  let u = String(baseUrl || '').trim().replace(/\/+$/, '')
+  if (/\/chat\/completions$/i.test(u)) return u
+  return u + '/chat/completions'
+}
+
+function postJson(u, bodyObj, headers) {
+  return new Promise((resolve, reject) => {
+    const lib = u.protocol === 'https:' ? https : http
+    const data = JSON.stringify(bodyObj)
+    const req = lib.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search,
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }, headers),
+    }, (res) => {
+      const chunks = []
+      res.on('data', (c) => chunks.push(c))
+      res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }))
+    })
+    req.on('error', reject)
+    req.write(data)
+    req.end()
+  })
+}
+
 http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0])
   if (urlPath === '/' ) urlPath = '/index.html'
+  if (urlPath === '/api/ai/design') {
+    if (req.method !== 'POST') { res.writeHead(405); res.end('method not allowed'); return }
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', async () => {
+      let cfg
+      try { cfg = JSON.parse(body || '{}') } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return }
+      const baseUrl = cfg.baseUrl, apiKey = cfg.apiKey, model = cfg.model, messages = cfg.messages
+      if (!baseUrl || !model || !Array.isArray(messages)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '缺少 baseUrl / model / messages' })); return }
+      let u
+      try { u = new URL(aiEndpoint(baseUrl)) } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'baseUrl 无效' })); return }
+      try {
+        const r = await postJson(u, { model, messages }, { Authorization: 'Bearer ' + (apiKey || '') })
+        if (r.status < 200 || r.status >= 300) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游 ' + r.status + ': ' + r.text.slice(0, 250) })); return }
+        const j = JSON.parse(r.text)
+        const content = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, content: typeof content === 'string' ? content : '' }))
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: '代理请求失败: ' + e.message }))
+      }
+    })
+    return
+  }
+
   let file = path.normalize(path.join(root, urlPath))
   if (!file.startsWith(root)) {
     res.writeHead(403); res.end('forbidden'); return

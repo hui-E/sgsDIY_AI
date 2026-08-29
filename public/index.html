@@ -22,6 +22,9 @@
       </header>
 
       <div class="card-form">
+        <div class="field ai-field">
+          <button id="ai-open" class="ai-open" type="button">✦ AI 设计武将</button>
+        </div>
         <div class="field">
           <label>势力</label>
           <div id="faction" class="faction-grid"></div>
@@ -91,7 +94,40 @@
     </section>
 
   </div>
-  <div id="toast" class="toast hidden"></div>
+      <!-- AI 设计模态 -->
+    <div id="ai-modal" class="modal hidden">
+      <div class="modal-mask"></div>
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>AI 设计武将</h2>
+          <button id="ai-close" class="iconbtn" type="button" aria-label="关闭">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label>人物名 <span class="req">*</span></label>
+            <input id="ai-character" type="text" maxlength="40" placeholder="例如：《死神》黑崎一护" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>API 地址</label>
+            <input id="ai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>API Key</label>
+            <input id="ai-key" type="password" placeholder="sk-…" autocomplete="off">
+          </div>
+          <div class="field">
+            <label>模型名</label>
+            <input id="ai-model" type="text" placeholder="gpt-4o-mini" autocomplete="off">
+          </div>
+          <p id="ai-status" class="ai-status"></p>
+        </div>
+        <div class="modal-foot">
+          <button id="ai-save-config" class="ghost sm" type="button">保存配置</button>
+          <button id="ai-generate" class="primary sm" type="button">开始生成</button>
+        </div>
+      </div>
+    </div>
+<div id="toast" class="toast hidden"></div>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

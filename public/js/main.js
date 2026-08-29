@@ -6,6 +6,7 @@ import { loadAssets } from './assets.js'
 import { renderCard } from './render.js'
 import { attachGestures } from './gestures.js'
 import { renderPNG, downloadBlob, filenameFor, shareBlob } from './export.js'
+import * as AI from './ai.js'
 
 const $ = (s) => document.querySelector(s)
 
@@ -41,6 +42,16 @@ const refs = {
   tools: Array.from(document.querySelectorAll('.tool')),
   hint: $('#layout-hint'),
   toast: $('#toast'),
+  aiOpen: $('#ai-open'),
+  aiModal: $('#ai-modal'),
+  aiClose: $('#ai-close'),
+  aiCharacter: $('#ai-character'),
+  aiBase: $('#ai-base'),
+  aiKey: $('#ai-key'),
+  aiModel: $('#ai-model'),
+  aiSaveConfig: $('#ai-save-config'),
+  aiGenerate: $('#ai-generate'),
+  aiStatus: $('#ai-status'),
 }
 
 let toastTimer = 0
@@ -193,6 +204,69 @@ async function save() {
   toast('已生成武将卡图片')
 }
 
+// ---------- AI 设计 ----------
+function openAIModal() {
+  const cfg = AI.loadConfig()
+  refs.aiBase.value = cfg.baseUrl || ''
+  refs.aiKey.value = cfg.apiKey || ''
+  refs.aiModel.value = cfg.model || ''
+  refs.aiStatus.textContent = ''
+  refs.aiModal.classList.remove('hidden')
+}
+function closeAIModal() {
+  refs.aiModal.classList.add('hidden')
+}
+function aiConfigFromForm() {
+  return {
+    baseUrl: refs.aiBase.value.trim(),
+    apiKey: refs.aiKey.value.trim(),
+    model: refs.aiModel.value.trim(),
+  }
+}
+function saveConfigFromForm() {
+  const cfg = aiConfigFromForm()
+  if (!cfg.baseUrl) { refs.aiStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
+  if (!cfg.model) { refs.aiStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
+  AI.saveConfig(cfg)
+  toast('配置已保存')
+}
+function applyAIResult(r) {
+  state.card.name = r.character_name
+  state.card.title = r.title
+  state.card.faction = r.camp
+  state.card.hp = r.hp
+  state.card.skills = r.skills.length ? r.skills.map((sk) => ({ name: sk.name, desc: sk.desc })) : [{ name: '', desc: '' }]
+  refs.name.value = state.card.name
+  refs.title.value = state.card.title
+  refs.hp.value = state.card.hp
+  buildFactionGrid()
+  renderSkills()
+  requestRender()
+}
+async function generateAI() {
+  const character = refs.aiCharacter.value.trim()
+  if (!character) { refs.aiStatus.textContent = '请输入人物名'; toast('请输入人物名'); return }
+  const cfg = aiConfigFromForm()
+  if (!cfg.baseUrl) { refs.aiStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
+  if (!cfg.model) { refs.aiStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
+  refs.aiGenerate.disabled = true
+  refs.aiStatus.textContent = '生成中…'
+  try {
+    AI.saveConfig(cfg)
+    const r = await AI.generateCard({ character, cfg })
+    applyAIResult(r)
+    refs.aiStatus.textContent = ''
+    toast('已生成武将信息')
+    closeAIModal()
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : '未知错误'
+    refs.aiStatus.textContent = msg
+    toast('生成失败：' + msg)
+  } finally {
+    refs.aiGenerate.disabled = false
+  }
+}
+
 // ---------- 初始化 ----------
 async function init() {
   state.assets = await loadAssets()
@@ -215,6 +289,11 @@ async function init() {
   refs.back.addEventListener('click', goEdit)
   refs.save.addEventListener('click', save)
   refs.tools.forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)))
+  refs.aiOpen.addEventListener('click', openAIModal)
+  refs.aiClose.addEventListener('click', closeAIModal)
+  refs.aiSaveConfig.addEventListener('click', saveConfigFromForm)
+  refs.aiGenerate.addEventListener('click', generateAI)
+  refs.aiModal.addEventListener('click', (e) => { if (e.target.classList.contains('modal-mask')) closeAIModal() })
 
   state.gestures = attachGestures({
     canvas: state.canvas,
@@ -228,6 +307,7 @@ async function init() {
     state,
     requestRender,
     renderPNG: async () => renderPNG(state.card, state.assets),
+    ai: AI,
   }
 
   // 演示模式：?demo — 用成品参考图作为武将图，直接进入排版，便于验证渲染
