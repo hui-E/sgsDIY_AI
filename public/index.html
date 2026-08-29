@@ -24,6 +24,7 @@
       <div class="card-form">
         <div class="field ai-field">
           <button id="ai-open" class="ai-open" type="button">✦ AI 设计武将</button>
+          <button id="ai-config-open" class="ai-config-open" type="button">⚙ AI 配置</button>
         </div>
         <div class="field">
           <label>势力</label>
@@ -93,53 +94,72 @@
       <p id="layout-hint" class="hints">拖动武将图 / 名称 / 称号，双指缩放图片；点上方切换。</p>
     </section>
 
-  </div>
-      <!-- AI 设计模态 -->
-    <div id="ai-modal" class="modal hidden">
-      <div class="modal-mask"></div>
-      <div class="modal-card">
-        <div class="modal-head">
-          <h2>AI 设计武将</h2>
-          <button id="ai-close" class="iconbtn" type="button" aria-label="关闭">×</button>
+    <!-- AI 设计武将（页面） -->
+    <section id="generate-view" class="view hidden">
+      <header class="topbar">
+        <button id="gen-back" class="iconbtn" type="button" aria-label="返回编辑">‹</button>
+        <div class="title-center">
+          <h1>AI 设计武将</h1>
+          <p class="subtitle">输入人物名 → 自动生成</p>
         </div>
-        <div class="modal-body">
-          <div class="field">
-            <label>人物名 <span class="req">*</span></label>
-            <input id="ai-character" type="text" maxlength="40" placeholder="例如：《死神》黑崎一护" autocomplete="off">
-          </div>
-          <div class="field">
-            <label>API 地址</label>
-            <input id="ai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
-          </div>
-          <div class="field">
-            <label>API Key</label>
-            <input id="ai-key" type="password" placeholder="sk-…" autocomplete="off">
-          </div>
-          <div class="field">
-            <label>模型名</label>
-            <input id="ai-model" type="text" placeholder="gpt-4o-mini" autocomplete="off">
-          </div>
-          <p id="ai-status" class="ai-status"></p>
-          <div id="ai-progress" class="ai-progress hidden">
-            <div class="ai-progress-head">
-              <span id="ai-elapsed" class="ai-stat">0s</span>
-              <span id="ai-tokens" class="ai-stat"></span>
-              <button id="ai-stop" class="ai-stop" type="button" disabled>停止</button>
-            </div>
-            <details id="ai-reason-box" class="ai-reason hidden">
-              <summary>思考过程</summary>
-              <pre id="ai-reasoning" class="ai-scroll"></pre>
-            </details>
-            <pre id="ai-stream" class="ai-scroll ai-stream"></pre>
-          </div>
+        <span class="step-badge">AI</span>
+      </header>
 
+      <div class="card-form">
+        <div class="field">
+          <label>人物名 <span class="req">*</span></label>
+          <input id="ai-character" type="text" maxlength="40" placeholder="例如：《死神》黑崎一护" autocomplete="off">
         </div>
-        <div class="modal-foot">
-          <button id="ai-save-config" class="ghost sm" type="button">保存配置</button>
-          <button id="ai-generate" class="primary sm" type="button">开始生成</button>
+        <p id="ai-status" class="ai-status"></p>
+        <div id="ai-progress" class="ai-progress hidden">
+          <div class="ai-progress-head">
+            <span id="ai-elapsed" class="ai-stat">0s</span>
+            <span id="ai-tokens" class="ai-stat"></span>
+            <button id="ai-stop" class="ai-stop" type="button" disabled>停止</button>
+          </div>
+          <div id="ai-current" class="ai-current hidden"></div>
+          <details id="ai-reason-box" class="ai-reason hidden">
+            <summary>展开完整思考</summary>
+            <pre id="ai-reasoning" class="ai-scroll"></pre>
+          </details>
+          <details id="ai-content-box" class="ai-reason hidden">
+            <summary>展开完整生成</summary>
+            <pre id="ai-stream" class="ai-scroll ai-stream"></pre>
+          </details>
         </div>
+        <button id="ai-generate" class="primary" type="button">开始生成</button>
       </div>
-    </div>
+    </section>
+
+    <!-- AI 配置（页面） -->
+    <section id="config-view" class="view hidden">
+      <header class="topbar">
+        <button id="cfg-back" class="iconbtn" type="button" aria-label="返回编辑">‹</button>
+        <div class="title-center">
+          <h1>AI 配置</h1>
+          <p class="subtitle">OpenAI 兼容接口</p>
+        </div>
+        <span class="step-badge">配置</span>
+      </header>
+
+      <div class="card-form">
+        <div class="field">
+          <label>API 地址</label>
+          <input id="ai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>API Key</label>
+          <input id="ai-key" type="password" placeholder="sk-…" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>模型名</label>
+          <input id="ai-model" type="text" placeholder="gpt-4o-mini" autocomplete="off">
+        </div>
+        <p id="cfg-status" class="ai-status"></p>
+        <button id="ai-save-config" class="primary" type="button">保存配置</button>
+      </div>
+    </section>
+  </div>
 <div id="toast" class="toast hidden"></div>
   <script type="module" src="js/main.js"></script>
 </body>

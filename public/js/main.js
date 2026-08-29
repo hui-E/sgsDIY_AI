@@ -43,8 +43,12 @@ const refs = {
   hint: $('#layout-hint'),
   toast: $('#toast'),
   aiOpen: $('#ai-open'),
-  aiModal: $('#ai-modal'),
-  aiClose: $('#ai-close'),
+  aiConfigOpen: $('#ai-config-open'),
+  genView: $('#generate-view'),
+  genBack: $('#gen-back'),
+  cfgView: $('#config-view'),
+  cfgBack: $('#cfg-back'),
+  cfgStatus: $('#cfg-status'),
   aiCharacter: $('#ai-character'),
   aiBase: $('#ai-base'),
   aiKey: $('#ai-key'),
@@ -56,8 +60,10 @@ const refs = {
   aiStop: $('#ai-stop'),
   aiElapsed: $('#ai-elapsed'),
   aiTokens: $('#ai-tokens'),
+  aiCurrent: $('#ai-current'),
   aiReasonBox: $('#ai-reason-box'),
   aiReasoning: $('#ai-reasoning'),
+  aiContentBox: $('#ai-content-box'),
   aiStream: $('#ai-stream'),
 
 }
@@ -217,26 +223,52 @@ let currentAIAbort = null
 let aiElapsedTimer = 0
 let aiElapsedSec = 0
 
-function openAIModal() {
-  const cfg = AI.loadConfig()
-  refs.aiBase.value = cfg.baseUrl || ''
-  refs.aiKey.value = cfg.apiKey || ''
-  refs.aiModel.value = cfg.model || ''
+function resetAIView() {
   refs.aiStatus.textContent = ''
   refs.aiElapsed.textContent = '0s'
   refs.aiTokens.textContent = ''
   refs.aiStream.textContent = ''
   refs.aiReasoning.textContent = ''
+  refs.aiCurrent.textContent = ''
+  refs.aiCurrent.classList.add('hidden')
   refs.aiReasonBox.classList.add('hidden')
   refs.aiReasonBox.open = false
+  refs.aiContentBox.classList.add('hidden')
+  refs.aiContentBox.open = false
   refs.aiProgress.classList.add('hidden')
-  refs.aiModal.classList.remove('hidden')
 }
-function closeAIModal() {
+function goGenerate() {
+  refs.edit.classList.add('hidden')
+  refs.genView.classList.remove('hidden')
+  const cfg = AI.loadConfig()
+  refs.aiBase.value = cfg.baseUrl || ''
+  refs.aiKey.value = cfg.apiKey || ''
+  refs.aiModel.value = cfg.model || ''
+  resetAIView()
+}
+function goGenerateBack() {
   if (currentAIAbort) currentAIAbort.abort()
-  refs.aiModal.classList.add('hidden')
+  refs.genView.classList.add('hidden')
+  refs.edit.classList.remove('hidden')
 }
-function aiConfigFromForm() {
+function goConfig() {
+  refs.edit.classList.add('hidden')
+  refs.cfgView.classList.remove('hidden')
+  const cfg = AI.loadConfig()
+  refs.aiBase.value = cfg.baseUrl || ''
+  refs.aiKey.value = cfg.apiKey || ''
+  refs.aiModel.value = cfg.model || ''
+  refs.cfgStatus.textContent = ''
+}
+function goConfigBack() {
+  refs.cfgView.classList.add('hidden')
+  refs.edit.classList.remove('hidden')
+}
+function latestSnippet(text) {
+  const t = (text || '').replace(/\s+/g, ' ').trim()
+  if (!t) return ''
+  return t.length > 80 ? '… ' + t.slice(-80) : t
+}function aiConfigFromForm() {
   return {
     baseUrl: refs.aiBase.value.trim(),
     apiKey: refs.aiKey.value.trim(),
@@ -245,10 +277,11 @@ function aiConfigFromForm() {
 }
 function saveConfigFromForm() {
   const cfg = aiConfigFromForm()
-  if (!cfg.baseUrl) { refs.aiStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
-  if (!cfg.model) { refs.aiStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
+  if (!cfg.baseUrl) { refs.cfgStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
+  if (!cfg.model) { refs.cfgStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
   AI.saveConfig(cfg)
   toast('配置已保存')
+  goConfigBack()
 }
 function startElapsed() {
   aiElapsedSec = 0
@@ -288,13 +321,16 @@ async function generateAI() {
 
   currentAIAbort = new AbortController()
   refs.aiGenerate.disabled = true
-  refs.aiSaveConfig.disabled = true
   refs.aiStop.disabled = false
   refs.aiProgress.classList.remove('hidden')
+  refs.aiCurrent.textContent = ''
+  refs.aiCurrent.classList.remove('hidden')
   refs.aiStream.textContent = ''
   refs.aiReasoning.textContent = ''
   refs.aiReasonBox.classList.add('hidden')
   refs.aiReasonBox.open = false
+  refs.aiContentBox.classList.add('hidden')
+  refs.aiContentBox.open = false
   refs.aiTokens.textContent = ''
   startElapsed()
 
@@ -304,21 +340,26 @@ async function generateAI() {
       character, cfg, signal: currentAIAbort.signal,
       callbacks: {
         onReasoning: (chunk, full) => {
-          refs.aiReasonBox.classList.remove('hidden')
-          refs.aiReasonBox.open = true
+          refs.aiCurrent.textContent = latestSnippet(full)
+          refs.aiCurrent.classList.remove('hidden')
           refs.aiReasoning.textContent = full
-          refs.aiTokens.textContent = `已接收 ${full.length} 字`
+          refs.aiReasonBox.classList.remove('hidden')
+          refs.aiTokens.textContent = '已接收 ' + full.length + ' 字'
         },
         onContent: (chunk, full) => {
+          refs.aiCurrent.textContent = latestSnippet(full)
+          refs.aiCurrent.classList.remove('hidden')
           refs.aiStream.textContent = full
           refs.aiStream.scrollTop = refs.aiStream.scrollHeight
+          refs.aiContentBox.classList.remove('hidden')
+          refs.aiTokens.textContent = '已接收 ' + full.length + ' 字'
         },
       },
     })
     applyAIResult(r)
     refs.aiStatus.textContent = ''
     toast('已生成武将信息')
-    closeAIModal()
+    goGenerateBack()
   } catch (e) {
     const msg = (e && e.message) ? e.message : '未知错误'
     if (e && e.name === 'AbortError') {
@@ -332,12 +373,9 @@ async function generateAI() {
     stopElapsed()
     currentAIAbort = null
     refs.aiGenerate.disabled = false
-    refs.aiSaveConfig.disabled = false
     refs.aiStop.disabled = true
-    refs.aiProgress.classList.add('hidden')
   }
 }
-
 
 // ---------- 初始化 ----------
 async function init() {
@@ -361,13 +399,13 @@ async function init() {
   refs.back.addEventListener('click', goEdit)
   refs.save.addEventListener('click', save)
   refs.tools.forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)))
-  refs.aiOpen.addEventListener('click', openAIModal)
-  refs.aiClose.addEventListener('click', closeAIModal)
+  refs.aiOpen.addEventListener('click', goGenerate)
+  refs.aiConfigOpen.addEventListener('click', goConfig)
+  refs.genBack.addEventListener('click', goGenerateBack)
+  refs.cfgBack.addEventListener('click', goConfigBack)
   refs.aiSaveConfig.addEventListener('click', saveConfigFromForm)
   refs.aiGenerate.addEventListener('click', generateAI)
   refs.aiStop.addEventListener('click', stopAI)
-
-  refs.aiModal.addEventListener('click', (e) => { if (e.target.classList.contains('modal-mask')) closeAIModal() })
 
   state.gestures = attachGestures({
     canvas: state.canvas,
