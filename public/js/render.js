@@ -23,14 +23,15 @@ export const LAYOUT = {
   gemRightMargin: 66, // 勾玉铺到右侧留白处才换行
 
   skillLeft: 64,
-  boxW: 208,
-  boxH: 82,
+  boxW: 216,
+  boxH: 104,
   boxScale: 1,
   descLeft: 312,
   descRightMargin: 34,
-  descFont: 31,
-  descLineH: 41,
-  skillGap: 34,
+  descFont: 46,
+  descLineH: 58,
+  skillNameFont: 46,
+  skillGap: 52,
   bandPadTop: 26,
   bandPadBottom: 44,
 }
@@ -203,7 +204,7 @@ function drawSkillContent(ctx, card, assets, rows) {
       ctx.drawImage(box, bx, by, bw, bh)
       // 技能名（在框内居中偏左）
       ctx.save()
-      withFont(ctx, BRUSH_FONT, 34)
+      withFont(ctx, BRUSH_FONT, L.skillNameFont)
       ctx.textAlign = 'center'
       fillText(ctx, r.name, bx + bw * 0.44, by + bh / 2 + 2, '#3a2410', 'rgba(255,246,220,0.55)', 4)
       ctx.restore()
