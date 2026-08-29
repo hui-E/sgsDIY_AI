@@ -385,3 +385,18 @@ input::placeholder { color: var(--muted-2); }
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+.ai-progress { margin-top: 14px; padding: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
+.ai-progress.hidden { display: none; }
+.ai-progress-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ai-stat { font-size: 12px; color: var(--muted-2); }
+.ai-stat:nth-child(2) { flex: 1; }
+.ai-stop { flex: 0 0 auto; padding: 7px 14px; font-size: 13px; font-weight: 600; border-radius: var(--radius); border: 1px solid var(--line); background: var(--bg-2); color: var(--text); }
+.ai-stop:disabled { opacity: 0.45; }
+.ai-reason { margin-bottom: 10px; }
+.ai-reason.hidden { display: none; }
+.ai-reason summary { cursor: pointer; font-size: 12px; color: var(--accent-2); user-select: none; margin-bottom: 6px; }
+.ai-reason summary:hover { text-decoration: underline; }
+.ai-scroll { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.55; font-size: 12px; max-height: 150px; overflow: auto; }
+.ai-reason pre { color: var(--muted-2); }
+.ai-stream { color: var(--text); }

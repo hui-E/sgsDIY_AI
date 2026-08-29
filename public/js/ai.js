@@ -102,38 +102,85 @@ export function endpoint(baseUrl) {
   return u + '/chat/completions'
 }
 
-function extractContent(json) {
-  const c = json && json.choices && json.choices[0] && json.choices[0].message && json.choices[0].message.content
-  if (typeof c !== 'string') throw new Error('AI 响应缺少 content')
-  return c
-}
-
 function isLocalhost() {
   return ['localhost', '127.0.0.1', '::1'].includes(location.hostname)
 }
 
-async function proxyRequest(cfg, messages) {
+async function consumeSSE(res, callbacks = {}, signal) {
+  if (!res.body) throw new Error('响应不支持流式读取')
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buf = ''
+  let content = ''
+  let reasoning = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (signal && signal.aborted) {
+      try { await reader.cancel() } catch {}
+      const err = new Error('已停止生成')
+      err.name = 'AbortError'
+      throw err
+    }
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let idx
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).replace(/\r$/, '').trim()
+      buf = buf.slice(idx + 1)
+      if (!line.startsWith('data:')) continue
+      const data = line.slice(5).trim()
+      if (data === '[DONE]') {
+        try { await reader.cancel() } catch {}
+        return { content, reasoning }
+      }
+      if (!data) continue
+      let obj
+      try { obj = JSON.parse(data) } catch { continue }
+      const choice = obj.choices && obj.choices[0]
+      const delta = choice && choice.delta
+      if (!delta) continue
+      if (typeof delta.reasoning_content === 'string') {
+        reasoning += delta.reasoning_content
+        if (callbacks.onReasoning) callbacks.onReasoning(delta.reasoning_content, reasoning)
+      } else if (typeof delta.reasoning === 'string') {
+        reasoning += delta.reasoning
+        if (callbacks.onReasoning) callbacks.onReasoning(delta.reasoning, reasoning)
+      }
+      if (typeof delta.content === 'string') {
+        content += delta.content
+        if (callbacks.onContent) callbacks.onContent(delta.content, content)
+      }
+    }
+  }
+  return { content, reasoning }
+}
+
+async function proxyStream(cfg, messages, callbacks = {}, signal) {
   const res = await fetch('/api/ai/design', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...cfg, messages }),
+    body: JSON.stringify({ ...cfg, messages, stream: true }),
+    signal,
   })
-  const pj = await res.json().catch(() => null)
-  if (res.ok && pj && pj.ok) return pj.content
-  throw new Error((pj && pj.error) || '本地代理调用失败')
+  if (!res.ok) {
+    const pj = await res.json().catch(() => null)
+    throw new Error((pj && pj.error) || '本地代理调用失败')
+  }
+  return consumeSSE(res, callbacks, signal)
 }
 
-export async function requestModel(cfg, messages) {
-  const payload = JSON.stringify({ model: cfg.model, messages })
+export async function requestModelStream(cfg, messages, callbacks = {}, signal) {
+  const payload = JSON.stringify({ model: cfg.model, messages, stream: true })
   const url = endpoint(cfg.baseUrl)
   const headers = { 'Content-Type': 'application/json' }
   if (cfg.apiKey) headers['Authorization'] = 'Bearer ' + cfg.apiKey
 
   let res
   try {
-    res = await fetch(url, { method: 'POST', headers, body: payload })
+    res = await fetch(url, { method: 'POST', headers, body: payload, signal })
   } catch (e) {
-    if (isLocalhost()) return proxyRequest(cfg, messages)
+    if (signal && signal.aborted) throw e
+    if (isLocalhost()) return proxyStream(cfg, messages, callbacks, signal)
     throw new Error('无法连接 AI 接口（网络或跨域限制）：' + e.message)
   }
 
@@ -143,15 +190,15 @@ export async function requestModel(cfg, messages) {
     throw new Error('AI 接口错误：' + msg)
   }
 
-  return extractContent(await res.json())
+  return consumeSSE(res, callbacks, signal)
 }
 
-export async function generateCard({ character, cfg }) {
+export async function streamCard({ character, cfg, callbacks = {}, signal }) {
   if (!character) throw new Error('请输入人物名')
   if (!cfg || !cfg.baseUrl) throw new Error('请先配置 API 地址')
   if (!cfg.model) throw new Error('请先配置模型名')
   const messages = buildPrompt(character)
-  const content = await requestModel(cfg, messages)
+  const { content } = await requestModelStream(cfg, messages, callbacks, signal)
   const raw = extractJSON(content)
   return normalizeResult(raw, character)
 }

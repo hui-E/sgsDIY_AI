@@ -51,6 +51,46 @@ function postJson(u, bodyObj, headers) {
   })
 }
 
+function streamProxy(u, bodyObj, headers, res) {
+  const lib = u.protocol === 'https:' ? https : http
+  const data = JSON.stringify(bodyObj)
+  let finished = false
+  const finish = () => { finished = true }
+  const upstreamReq = lib.request({
+    protocol: u.protocol,
+    hostname: u.hostname,
+    port: u.port || (u.protocol === 'https:' ? 443 : 80),
+    path: u.pathname + u.search,
+    method: 'POST',
+    headers: Object.assign({ 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data), 'Accept': 'text/event-stream' }, headers),
+  }, (upstream) => {
+    if (upstream.statusCode < 200 || upstream.statusCode >= 300) {
+      const chunks = []
+      upstream.on('data', (c) => chunks.push(c))
+      upstream.on('end', () => {
+        if (res.headersSent) { try { res.end() } catch {}; return }
+        res.writeHead(502, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: '上游 ' + upstream.statusCode + ': ' + Buffer.concat(chunks).toString('utf8').slice(0, 250) }))
+        finish()
+      })
+      return
+    }
+    res.writeHead(upstream.statusCode, { 'Content-Type': upstream.headers['content-type'] || 'text/event-stream', 'Cache-Control': 'no-cache' })
+    upstream.pipe(res)
+    upstream.on('end', () => { finish(); try { res.end() } catch {} })
+    upstream.on('close', finish)
+    upstream.on('error', () => { finish(); try { res.end() } catch {} })
+  })
+  upstreamReq.on('error', (e) => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'application/json' })
+    try { res.end(JSON.stringify({ ok: false, error: '代理请求失败: ' + e.message })) } catch {}
+    finish()
+  })
+  res.on('close', () => { if (!finished) { try { upstreamReq.destroy() } catch {} } })
+  upstreamReq.write(data)
+  upstreamReq.end()
+}
+
 http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0])
   if (urlPath === '/' ) urlPath = '/index.html'
@@ -65,6 +105,10 @@ http.createServer((req, res) => {
       if (!baseUrl || !model || !Array.isArray(messages)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '缺少 baseUrl / model / messages' })); return }
       let u
       try { u = new URL(aiEndpoint(baseUrl)) } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'baseUrl 无效' })); return }
+      if (cfg.stream) {
+        streamProxy(u, { model, messages }, { Authorization: 'Bearer ' + (apiKey || '') }, res)
+        return
+      }
       try {
         const r = await postJson(u, { model, messages }, { Authorization: 'Bearer ' + (apiKey || '') })
         if (r.status < 200 || r.status >= 300) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游 ' + r.status + ': ' + r.text.slice(0, 250) })); return }

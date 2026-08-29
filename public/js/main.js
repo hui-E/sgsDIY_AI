@@ -52,6 +52,14 @@ const refs = {
   aiSaveConfig: $('#ai-save-config'),
   aiGenerate: $('#ai-generate'),
   aiStatus: $('#ai-status'),
+  aiProgress: $('#ai-progress'),
+  aiStop: $('#ai-stop'),
+  aiElapsed: $('#ai-elapsed'),
+  aiTokens: $('#ai-tokens'),
+  aiReasonBox: $('#ai-reason-box'),
+  aiReasoning: $('#ai-reasoning'),
+  aiStream: $('#ai-stream'),
+
 }
 
 let toastTimer = 0
@@ -205,15 +213,27 @@ async function save() {
 }
 
 // ---------- AI 设计 ----------
+let currentAIAbort = null
+let aiElapsedTimer = 0
+let aiElapsedSec = 0
+
 function openAIModal() {
   const cfg = AI.loadConfig()
   refs.aiBase.value = cfg.baseUrl || ''
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
   refs.aiStatus.textContent = ''
+  refs.aiElapsed.textContent = '0s'
+  refs.aiTokens.textContent = ''
+  refs.aiStream.textContent = ''
+  refs.aiReasoning.textContent = ''
+  refs.aiReasonBox.classList.add('hidden')
+  refs.aiReasonBox.open = false
+  refs.aiProgress.classList.add('hidden')
   refs.aiModal.classList.remove('hidden')
 }
 function closeAIModal() {
+  if (currentAIAbort) currentAIAbort.abort()
   refs.aiModal.classList.add('hidden')
 }
 function aiConfigFromForm() {
@@ -229,6 +249,22 @@ function saveConfigFromForm() {
   if (!cfg.model) { refs.aiStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
   AI.saveConfig(cfg)
   toast('配置已保存')
+}
+function startElapsed() {
+  aiElapsedSec = 0
+  refs.aiElapsed.textContent = '0s'
+  clearInterval(aiElapsedTimer)
+  aiElapsedTimer = setInterval(() => {
+    aiElapsedSec++
+    refs.aiElapsed.textContent = aiElapsedSec + 's'
+    refs.aiStatus.textContent = '生成中… ' + aiElapsedSec + 's'
+  }, 1000)
+}
+function stopElapsed() {
+  clearInterval(aiElapsedTimer)
+}
+function stopAI() {
+  if (currentAIAbort) currentAIAbort.abort()
 }
 function applyAIResult(r) {
   state.card.name = r.character_name
@@ -249,23 +285,59 @@ async function generateAI() {
   const cfg = aiConfigFromForm()
   if (!cfg.baseUrl) { refs.aiStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
   if (!cfg.model) { refs.aiStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
+
+  currentAIAbort = new AbortController()
   refs.aiGenerate.disabled = true
-  refs.aiStatus.textContent = '生成中…'
+  refs.aiSaveConfig.disabled = true
+  refs.aiStop.disabled = false
+  refs.aiProgress.classList.remove('hidden')
+  refs.aiStream.textContent = ''
+  refs.aiReasoning.textContent = ''
+  refs.aiReasonBox.classList.add('hidden')
+  refs.aiReasonBox.open = false
+  refs.aiTokens.textContent = ''
+  startElapsed()
+
   try {
     AI.saveConfig(cfg)
-    const r = await AI.generateCard({ character, cfg })
+    const r = await AI.streamCard({
+      character, cfg, signal: currentAIAbort.signal,
+      callbacks: {
+        onReasoning: (chunk, full) => {
+          refs.aiReasonBox.classList.remove('hidden')
+          refs.aiReasonBox.open = true
+          refs.aiReasoning.textContent = full
+          refs.aiTokens.textContent = `已接收 ${full.length} 字`
+        },
+        onContent: (chunk, full) => {
+          refs.aiStream.textContent = full
+          refs.aiStream.scrollTop = refs.aiStream.scrollHeight
+        },
+      },
+    })
     applyAIResult(r)
     refs.aiStatus.textContent = ''
     toast('已生成武将信息')
     closeAIModal()
   } catch (e) {
     const msg = (e && e.message) ? e.message : '未知错误'
-    refs.aiStatus.textContent = msg
-    toast('生成失败：' + msg)
+    if (e && e.name === 'AbortError') {
+      refs.aiStatus.textContent = '已停止'
+      toast('已停止生成')
+    } else {
+      refs.aiStatus.textContent = msg
+      toast('生成失败：' + msg)
+    }
   } finally {
+    stopElapsed()
+    currentAIAbort = null
     refs.aiGenerate.disabled = false
+    refs.aiSaveConfig.disabled = false
+    refs.aiStop.disabled = true
+    refs.aiProgress.classList.add('hidden')
   }
 }
+
 
 // ---------- 初始化 ----------
 async function init() {
@@ -293,6 +365,8 @@ async function init() {
   refs.aiClose.addEventListener('click', closeAIModal)
   refs.aiSaveConfig.addEventListener('click', saveConfigFromForm)
   refs.aiGenerate.addEventListener('click', generateAI)
+  refs.aiStop.addEventListener('click', stopAI)
+
   refs.aiModal.addEventListener('click', (e) => { if (e.target.classList.contains('modal-mask')) closeAIModal() })
 
   state.gestures = attachGestures({
