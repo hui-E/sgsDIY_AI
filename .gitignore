@@ -23,3 +23,8 @@ desktop.ini
 !.env.example
 *.key
 *.pem
+
+# Local dev artifacts (never commit)
+tmp/
+docs/
+素材/成品展示.jpg
