@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">三国杀武将 DIY</string>
+    <string name="title_activity_main">三国杀武将 DIY</string>
+    <string name="package_name">com.huie.sgsdiy</string>
+    <string name="custom_url_scheme">com.huie.sgsdiy</string>
+</resources>

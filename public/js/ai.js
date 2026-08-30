@@ -103,6 +103,10 @@ export function endpoint(baseUrl) {
   return u + '/chat/completions'
 }
 
+function isNative() {
+  return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+}
+
 function isLocalhost() {
   return ['localhost', '127.0.0.1', '::1'].includes(location.hostname)
 }
@@ -170,7 +174,105 @@ async function proxyStream(cfg, messages, callbacks = {}, signal) {
   return consumeSSE(res, callbacks, signal)
 }
 
+let nativePlugin = null
+function getNativePlugin() {
+  if (nativePlugin) return nativePlugin
+  if (window.Capacitor && window.Capacitor.registerPlugin) {
+    nativePlugin = window.Capacitor.registerPlugin('AiStream')
+  } else if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AiStream) {
+    nativePlugin = window.Capacitor.Plugins.AiStream
+  }
+  if (!nativePlugin) throw new Error('原生流式桥接插件未加载')
+  return nativePlugin
+}
+
+let nativeSeq = 0
+function nativeStream(cfg, messages, callbacks = {}, signal) {
+  return new Promise((resolve, reject) => {
+    const requestId = 'sgs-' + (++nativeSeq) + '-' + Date.now()
+    let plugin
+    try { plugin = getNativePlugin() } catch (e) { reject(e); return }
+    try { if (plugin && typeof plugin.setKeepScreenOn === 'function') plugin.setKeepScreenOn({ keepScreenOn: true }) } catch (e) {}
+
+    let reasoning = ''
+    let content = ''
+    let settled = false
+    let aborted = false
+    const listeners = []
+
+    const cleanupAll = () => {
+      listeners.forEach((l) => { try { l && l.remove && l.remove() } catch {} })
+      if (signal) signal.removeEventListener('abort', onAbort)
+      try { if (plugin && typeof plugin.setKeepScreenOn === 'function') plugin.setKeepScreenOn({ keepScreenOn: false }) } catch (e) {}
+    }
+
+    const onAbort = () => {
+      aborted = true
+      try { plugin.stop({ requestId }) } catch {}
+    }
+
+    const done = (ev) => {
+      if (settled || ev.requestId !== requestId) return
+      settled = true
+      cleanupAll()
+      if (ev.cancelled && aborted) {
+        const err = new Error('已停止生成')
+        err.name = 'AbortError'
+        reject(err)
+      } else {
+        resolve({ content, reasoning })
+      }
+    }
+
+    const fail = (ev) => {
+      if (settled || ev.requestId !== requestId) return
+      settled = true
+      cleanupAll()
+      reject(new Error(ev.error || '原生流式调用失败'))
+    }
+
+    const onReasoning = (ev) => {
+      if (settled || ev.requestId !== requestId) return
+      reasoning += ev.chunk || ''
+      if (callbacks.onReasoning) callbacks.onReasoning(ev.chunk || '', reasoning)
+    }
+    const onContent = (ev) => {
+      if (settled || ev.requestId !== requestId) return
+      content += ev.chunk || ''
+      if (callbacks.onContent) callbacks.onContent(ev.chunk || '', content)
+    }
+
+    try {
+      listeners.push(plugin.addListener('done', done))
+      listeners.push(plugin.addListener('error', fail))
+      listeners.push(plugin.addListener('reasoning', onReasoning))
+      listeners.push(plugin.addListener('content', onContent))
+    } catch (e) {
+      settled = true
+      reject(new Error('原生流式监听注册失败：' + (e && e.message ? e.message : e)))
+      return
+    }
+
+    if (signal) {
+      if (signal.aborted) { onAbort(); done({ requestId, cancelled: true }); return }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    const payload = JSON.stringify({ model: cfg.model, messages, stream: true })
+    const url = endpoint(cfg.baseUrl).replace(/\/+$/, '')
+    try {
+      plugin.stream({ requestId, baseUrl: url, apiKey: cfg.apiKey || '', model: cfg.model, payload })
+    } catch (e) {
+      settled = true
+      cleanupAll()
+      reject(new Error('原生流式调用失败：' + (e && e.message ? e.message : e)))
+    }
+  })
+}
+
 export async function requestModelStream(cfg, messages, callbacks = {}, signal) {
+  if (isNative()) return nativeStream(cfg, messages, callbacks, signal)
+
   const payload = JSON.stringify({ model: cfg.model, messages, stream: true })
   const url = endpoint(cfg.baseUrl)
   const headers = { 'Content-Type': 'application/json' }
@@ -203,3 +305,4 @@ export async function streamCard({ character, cfg, callbacks = {}, signal }) {
   const raw = extractJSON(content)
   return normalizeResult(raw, character)
 }
+

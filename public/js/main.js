@@ -5,9 +5,9 @@ import {
 import { loadAssets } from './assets.js'
 import { renderCard } from './render.js'
 import { attachGestures } from './gestures.js'
-import { renderPNG, downloadBlob, filenameFor, shareBlob } from './export.js'
+import { renderPNG, renderCardImage, baseNameFor, downloadBlob, filenameFor, shareBlob } from './export.js'
 import * as AI from './ai.js'
-import { searchImages, loadImageFromUrl } from './image.js'
+import { searchImages, loadImageFromUrl, isNative } from './image.js'
 
 const $ = (s) => document.querySelector(s)
 
@@ -88,6 +88,40 @@ function requestRender() {
   })
 }
 
+
+// ---------- 原生插件辅助 ----------
+function capPlugin(name) {
+  if (window.Capacitor && window.Capacitor.registerPlugin) return window.Capacitor.registerPlugin(name)
+  if (window.Capacitor && window.Capacitor.Plugins) return window.Capacitor.Plugins[name]
+  return null
+}
+
+
+const CameraSourceValue = { Photos: 'PHOTOS', Camera: 'CAMERA', Prompt: 'PROMPT' }
+const CameraResultTypeValue = { Uri: 'uri', Base64: 'base64', DataUrl: 'dataUrl' }
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader()
+    fr.onload = () => resolve(fr.result)
+    fr.onerror = () => reject(new Error('图片转换失败'))
+    fr.readAsDataURL(blob)
+  })
+}
+function applyImageToCard(img, src, label) {
+  const old = state.card.imageSrc
+  state.card.image = img
+  state.card.imageSrc = src
+  state.card.layout.image = coverTransform(img)
+  if (old && old.startsWith('blob:')) URL.revokeObjectURL(old)
+  refs.imageName.textContent = label
+  refs.imgSwap.classList.add('hidden')
+  refs.imagePreview.classList.remove('hidden')
+  refs.imagePreview.style.backgroundImage = `url(${src})`
+  refs.imagePreview.style.backgroundSize = 'cover'
+  refs.imagePreview.style.backgroundPosition = 'center'
+  requestRender()
+}
 // ---------- 阶段一：编辑表单 ----------
 function buildFactionGrid() {
   refs.faction.innerHTML = ''
@@ -166,6 +200,21 @@ function setHp(v) {
 }
 
 function pickImage() {
+  if (isNative()) {
+    const Camera = capPlugin('Camera')
+    if (!Camera || !Camera.getPhoto) { toast('相机插件未加载'); return }
+    Camera.getPhoto({ source: CameraSourceValue.Photos, resultType: CameraResultTypeValue.Uri, quality: 92, correctOrientation: true })
+      .then((photo) => {
+        const src = photo.webPath || photo.path
+        if (!src) { toast('未获取到图片'); return }
+        const img = new Image()
+        img.onload = () => applyImageToCard(img, src, '相册图片')
+        img.onerror = () => toast('图片读取失败')
+        img.src = src
+      })
+      .catch((e) => toast('选择图片失败：' + ((e && e.message) || '已取消')))
+    return
+  }
   refs.file.click()
 }
 
@@ -175,20 +224,7 @@ async function onFileChosen() {
   if (!file.type.startsWith('image/')) { toast('请选择图片文件'); return }
   const src = URL.createObjectURL(file)
   const img = new Image()
-  img.onload = () => {
-    const old = state.card.imageSrc
-    state.card.image = img
-    state.card.imageSrc = src
-    state.card.layout.image = coverTransform(img)
-    if (old && old.startsWith('blob:')) URL.revokeObjectURL(old)
-    refs.imageName.textContent = file.name
-    refs.imgSwap.classList.add('hidden')
-    refs.imagePreview.classList.remove('hidden')
-    refs.imagePreview.style.backgroundImage = `url(${src})`
-    refs.imagePreview.style.backgroundSize = 'cover'
-    refs.imagePreview.style.backgroundPosition = 'center'
-    requestRender()
-  }
+  img.onload = () => applyImageToCard(img, src, file.name)
   img.onerror = () => toast('图片读取失败')
   img.src = src
 }
@@ -217,10 +253,40 @@ function goEdit() {
   renderSkills()
 }
 
+async function nextAlbumName(albumDir, base) {
+  let plugin = null
+  try {
+    if (window.Capacitor && window.Capacitor.registerPlugin) plugin = window.Capacitor.registerPlugin('AlbumTools')
+    else if (window.Capacitor && window.Capacitor.Plugins) plugin = window.Capacitor.Plugins.AlbumTools
+  } catch (e) {}
+  if (plugin && typeof plugin.nextFileName === 'function') {
+    try {
+      const r = await plugin.nextFileName({ albumDir, baseName: base })
+      if (r && r.name) return r.name
+    } catch (e) {}
+  }
+  return base + '_' + Date.now()
+}
+
 async function save() {
-  const blob = await renderPNG(state.card, state.assets)
-  const filename = filenameFor(state.card)
-  const shared = await shareBlob(blob, filename)
+  const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
+  const base = baseNameFor(state.card)
+  if (isNative()) {
+    const Media = capPlugin('Media')
+    if (!Media || !Media.savePhoto) { toast('相册插件未加载'); return }
+    const albumDir = await resolveAlbum(Media)
+    const fileName = await nextAlbumName(albumDir, base)
+    const dataUrl = await blobToDataUrl(blob)
+    try {
+      await Media.savePhoto({ path: dataUrl, fileName, albumIdentifier: albumDir })
+      toast('已保存到相册')
+    } catch (e) {
+      toast('保存失败：' + ((e && e.message) || '未知错误'))
+    }
+    return
+  }
+  const filename = filenameFor(state.card, 'jpg')
+  const shared = await shareBlob(blob, filename, 'image/jpeg')
   if (!shared) downloadBlob(blob, filename)
   toast('已生成武将卡图片')
 }
@@ -577,3 +643,25 @@ async function init() {
 }
 
 init()
+
+async function resolveAlbum(Media) {
+  const albumName = '三国杀DIY'
+  let base = ''
+  if (Media && Media.getAlbumsPath) {
+    try {
+      const ap = await Media.getAlbumsPath()
+      if (ap && ap.path) base = String(ap.path).replace(/[\\/]+$/, '')
+    } catch (e) { /* 忽略 */ }
+  }
+  if (base) {
+    if (Media && Media.createAlbum) {
+      try { await Media.createAlbum({ name: albumName }) } catch (e) { /* 相册已存在则忽略 */ }
+    }
+    return base + '/' + albumName
+  }
+  if (Media && Media.getAlbums) {
+    const ls = await Media.getAlbums()
+    if (ls && ls.albums && ls.albums.length) return ls.albums[0].identifier
+  }
+  return null
+}
