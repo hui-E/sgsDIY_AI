@@ -91,6 +91,31 @@ function streamProxy(u, bodyObj, headers, res) {
   upstreamReq.end()
 }
 
+function getUrlRaw(target, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    const lib = target.protocol === 'https:' ? https : http
+    const req = lib.request({
+      protocol: target.protocol,
+      hostname: target.hostname,
+      port: target.port || (target.protocol === 'https:' ? 443 : 80),
+      path: target.pathname + target.search,
+      method: 'GET',
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': '*/*', 'Referer': target.origin },
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
+        res.resume()
+        try { resolve(getUrlRaw(new URL(res.headers.location, target), redirects + 1)) } catch (e) { reject(e) }
+        return
+      }
+      const chunks = []
+      res.on('data', (c) => chunks.push(c))
+      res.on('end', () => resolve({ status: res.statusCode, contentType: res.headers['content-type'] || 'application/octet-stream', buffer: Buffer.concat(chunks) }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 http.createServer((req, res) => {
   let urlPath = decodeURIComponent(req.url.split('?')[0])
   if (urlPath === '/' ) urlPath = '/index.html'
@@ -121,6 +146,51 @@ http.createServer((req, res) => {
         res.end(JSON.stringify({ ok: false, error: '代理请求失败: ' + e.message }))
       }
     })
+    return
+  }
+
+  if (urlPath === '/api/img/search') {
+    if (req.method !== 'GET') { res.writeHead(405); res.end('method not allowed'); return }
+    const qu = new URL(req.url, 'http://localhost')
+    const id = qu.searchParams.get('id'), key = qu.searchParams.get('key'), words = qu.searchParams.get('words'), page = qu.searchParams.get('page') || '1'
+    if (!id || !key || !words) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '缺少 id / key / words' })); return }
+    const target = new URL('https://cn.apihz.cn/api/img/apihzimgbaidu.php')
+    target.searchParams.set('id', id)
+    target.searchParams.set('key', key)
+    target.searchParams.set('limit', '10')
+    target.searchParams.set('page', page)
+    target.searchParams.set('words', words)
+    ;(async () => {
+      try {
+        const r = await getUrlRaw(target)
+        if (r.status < 200 || r.status >= 300) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游 ' + r.status })); return }
+        res.writeHead(200, { 'Content-Type': r.contentType, 'Cache-Control': 'no-cache' })
+        res.end(r.buffer)
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '搜索请求失败: ' + e.message }))
+      }
+    })()
+    return
+  }
+
+  if (urlPath === '/api/img/proxy') {
+    if (req.method !== 'GET') { res.writeHead(405); res.end('method not allowed'); return }
+    const qu = new URL(req.url, 'http://localhost')
+    const imgUrl = qu.searchParams.get('url')
+    if (!imgUrl) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '缺少 url' })); return }
+    let target
+    try { target = new URL(imgUrl) } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'url 无效' })); return }
+    if (!/^https?:/i.test(target.protocol)) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '仅支持 http/https' })); return }
+    ;(async () => {
+      try {
+        const r = await getUrlRaw(target)
+        if (r.status < 200 || r.status >= 300) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游 ' + r.status })); return }
+        res.writeHead(200, { 'Content-Type': r.contentType, 'Cache-Control': 'no-cache' })
+        res.end(r.buffer)
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '图片请求失败: ' + e.message }))
+      }
+    })()
     return
   }
 

@@ -108,6 +108,7 @@ button { font-family: inherit; cursor: pointer; border: none; }
   width: 100%;
 }
 .ghost.add { border-style: solid; }
+.ghost.hidden { display: none; }
 
 /* form */
 .card-form { padding: 8px 18px 28px; }
@@ -184,7 +185,7 @@ input::placeholder { color: var(--muted-2); }
 /* image picker */
 .img-row { display: flex; align-items: center; gap: 10px; }
 .img-row .ghost { width: auto; }
-.img-name { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.img-name { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .image-preview {
   margin-top: 10px;
   height: 170px;

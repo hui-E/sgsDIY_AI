@@ -7,6 +7,7 @@ import { renderCard } from './render.js'
 import { attachGestures } from './gestures.js'
 import { renderPNG, downloadBlob, filenameFor, shareBlob } from './export.js'
 import * as AI from './ai.js'
+import { searchImages, loadImageFromUrl } from './image.js'
 
 const $ = (s) => document.querySelector(s)
 
@@ -65,6 +66,9 @@ const refs = {
   aiFollow: $('#ai-follow'),
   aiContentBox: $('#ai-content-box'),
   aiStream: $('#ai-stream'),
+  imgSwap: $('#img-swap'),
+  aiImgId: $('#ai-img-id'),
+  aiImgKey: $('#ai-img-key'),
 
 }
 
@@ -172,10 +176,13 @@ async function onFileChosen() {
   const src = URL.createObjectURL(file)
   const img = new Image()
   img.onload = () => {
+    const old = state.card.imageSrc
     state.card.image = img
     state.card.imageSrc = src
     state.card.layout.image = coverTransform(img)
+    if (old && old.startsWith('blob:')) URL.revokeObjectURL(old)
     refs.imageName.textContent = file.name
+    refs.imgSwap.classList.add('hidden')
     refs.imagePreview.classList.remove('hidden')
     refs.imagePreview.style.backgroundImage = `url(${src})`
     refs.imagePreview.style.backgroundSize = 'cover'
@@ -301,6 +308,8 @@ function goGenerate() {
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
   refs.aiDesign.value = cfg.designReq || ''
+  refs.aiImgId.value = cfg.imgId || ''
+  refs.aiImgKey.value = cfg.imgKey || ''
   resetAIView()
 }
 function goGenerateBack() {
@@ -316,6 +325,8 @@ function goConfig() {
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
   refs.aiDesign.value = cfg.designReq || ''
+  refs.aiImgId.value = cfg.imgId || ''
+  refs.aiImgKey.value = cfg.imgKey || ''
   refs.cfgStatus.textContent = ''
 }
 function goConfigBack() {
@@ -328,6 +339,8 @@ function aiConfigFromForm() {
     apiKey: refs.aiKey.value.trim(),
     model: refs.aiModel.value.trim(),
     designReq: refs.aiDesign.value.trim(),
+    imgId: refs.aiImgId.value.trim(),
+    imgKey: refs.aiImgKey.value.trim(),
   }
 }
 function saveConfigFromForm() {
@@ -366,7 +379,80 @@ function applyAIResult(r) {
   buildFactionGrid()
   renderSkills()
   requestRender()
+  applyAIPortrait()
 }
+
+// ---------- AI 武将图 ----------
+function cleanPortraitTerm(text) {
+  return String(text || '').replace(/[《》「」【】]/g, '').replace(/[\s,，。.!！?？]+/g, '').trim()
+}
+
+function updatePortraitPreview(src, label) {
+  refs.imageName.textContent = label
+  refs.imagePreview.classList.remove('hidden')
+  refs.imagePreview.style.backgroundImage = `url(${src})`
+  refs.imagePreview.style.backgroundSize = 'cover'
+  refs.imagePreview.style.backgroundPosition = 'center'
+}
+
+async function applyAIPortrait() {
+  const cfg = AI.loadConfig()
+  if (!cfg || !cfg.imgId || !cfg.imgKey) return
+  const term = cleanPortraitTerm(refs.aiCharacter.value)
+  if (!term) return
+  try {
+    const res = await searchImages(cfg, term, 1)
+    if (!res.urls.length) { toast('未搜到相关图片，可手动选择'); return }
+    state.imgSearch = { cfg, term, urls: res.urls, page: res.page, maxpage: res.maxpage, count: res.count, cursor: 0 }
+    await loadPortraitAt(0)
+  } catch (e) {
+    toast('自动获取图片失败：' + ((e && e.message) || '未知错误'))
+  }
+}
+
+async function loadPortraitAt(index) {
+  const s = state.imgSearch
+  if (!s || !s.urls || !s.urls[index]) return
+  const url = s.urls[index]
+  try {
+    const { img, src } = await loadImageFromUrl(url)
+    const oldSrc = state.card.imageSrc
+    state.card.image = img
+    state.card.imageSrc = src
+    state.card.layout.image = coverTransform(img)
+    if (oldSrc && oldSrc.startsWith('blob:')) URL.revokeObjectURL(oldSrc)
+    const pos = (s.page - 1) * 10 + index + 1
+    updatePortraitPreview(src, `图源 第${pos}张`)
+    refs.imgSwap.classList.remove('hidden')
+    requestRender()
+  } catch (e) {
+    toast('图片加载失败，可手动选择')
+  }
+}
+
+async function swapPortrait() {
+  const s = state.imgSearch
+  if (!s || !s.urls || !s.urls.length) return
+  s.cursor++
+  if (s.cursor >= s.urls.length) {
+    const nextPage = s.page + 1
+    try {
+      const next = await searchImages(s.cfg, s.term, nextPage)
+      if (!next.urls.length) { toast('没有更多图片了'); s.cursor = s.urls.length - 1; return }
+      s.page = next.page
+      s.maxpage = next.maxpage
+      s.count = next.count
+      s.urls = next.urls
+      s.cursor = 0
+    } catch (e) {
+      toast('加载更多图片失败')
+      s.cursor = s.urls.length - 1
+      return
+    }
+  }
+  await loadPortraitAt(s.cursor)
+}
+
 async function generateAI() {
   const character = refs.aiCharacter.value.trim()
   if (!character) { refs.aiStatus.textContent = '请输入人物名'; toast('请输入人物名'); return }
@@ -456,6 +542,7 @@ async function init() {
   attachAIFollow()
   refs.aiGenerate.addEventListener('click', generateAI)
   refs.aiStop.addEventListener('click', stopAI)
+  refs.imgSwap.addEventListener('click', swapPortrait)
 
   state.gestures = attachGestures({
     canvas: state.canvas,
@@ -470,6 +557,7 @@ async function init() {
     requestRender,
     renderPNG: async () => renderPNG(state.card, state.assets),
     ai: AI,
+    image: { searchImages, loadImageFromUrl },
   }
 
   // 演示模式：?demo — 用成品参考图作为武将图，直接进入排版，便于验证渲染

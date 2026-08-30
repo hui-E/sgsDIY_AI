@@ -55,6 +55,7 @@
           <label>武将图片 <span class="req">*</span></label>
           <div class="img-row">
             <button id="pick-image" class="ghost" type="button">从相册选择</button>
+            <button id="img-swap" class="ghost hidden" type="button">换一张</button>
             <span id="image-name" class="img-name">未选择</span>
           </div>
           <div id="image-preview" class="image-preview hidden"></div>
@@ -157,6 +158,14 @@
         <div class="field">
           <label>武将设计要求</label>
           <textarea id="ai-design" rows="4" placeholder="可选，例如：擅长冰系技能；性格冷酷；至少包含一个防御技能"></textarea>
+        </div>
+        <div class="field">
+          <label>图片服务 ID</label>
+          <input id="ai-img-id" type="text" placeholder="如 10020533" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>图片服务 Key</label>
+          <input id="ai-img-key" type="password" placeholder="服务密钥" autocomplete="off">
         </div>
         <p id="cfg-status" class="ai-status"></p>
         <button id="ai-save-config" class="primary" type="button">保存配置</button>
