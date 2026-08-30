@@ -269,26 +269,32 @@ async function nextAlbumName(albumDir, base) {
 }
 
 async function save() {
-  const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
   const base = baseNameFor(state.card)
   if (isNative()) {
     const Media = capPlugin('Media')
     if (!Media || !Media.savePhoto) { toast('相册插件未加载'); return }
-    const albumDir = await resolveAlbum(Media)
-    const fileName = await nextAlbumName(albumDir, base)
-    const dataUrl = await blobToDataUrl(blob)
+    toast('正在保存图片…')
     try {
+      const albumDir = await resolveAlbum(Media)
+      const fileName = await nextAlbumName(albumDir, base)
+      toast('正在保存到：' + (albumDir || '相册') + '/' + fileName)
+      const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
+      const dataUrl = await blobToDataUrl(blob)
       await Media.savePhoto({ path: dataUrl, fileName, albumIdentifier: albumDir })
-      toast('已保存到相册')
     } catch (e) {
       toast('保存失败：' + ((e && e.message) || '未知错误'))
     }
     return
   }
   const filename = filenameFor(state.card, 'jpg')
-  const shared = await shareBlob(blob, filename, 'image/jpeg')
-  if (!shared) downloadBlob(blob, filename)
-  toast('已生成武将卡图片')
+  toast('正在保存到：' + filename)
+  try {
+    const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
+    const shared = await shareBlob(blob, filename, 'image/jpeg')
+    if (!shared) downloadBlob(blob, filename)
+  } catch (e) {
+    toast('保存失败：' + ((e && e.message) || '未知错误'))
+  }
 }
 
 // ---------- AI 设计 ----------
@@ -520,6 +526,7 @@ async function swapPortrait() {
 }
 
 async function generateAI() {
+  if (refs.aiGenerate.disabled) return
   const character = refs.aiCharacter.value.trim()
   if (!character) { refs.aiStatus.textContent = '请输入人物名'; toast('请输入人物名'); return }
   const cfg = aiConfigFromForm()
@@ -609,6 +616,18 @@ async function init() {
   refs.aiGenerate.addEventListener('click', generateAI)
   refs.aiStop.addEventListener('click', stopAI)
   refs.imgSwap.addEventListener('click', swapPortrait)
+
+  // 手机返回键：与各页面左上角返回键等效
+  const App = capPlugin('App')
+  if (App && typeof App.addListener === 'function') {
+    App.addListener('backButton', ({ canGoBack } = {}) => {
+      if (!refs.genView.classList.contains('hidden')) { goGenerateBack(); return }
+      if (!refs.cfgView.classList.contains('hidden')) { goConfigBack(); return }
+      if (!refs.layout.classList.contains('hidden')) { goEdit(); return }
+      if (canGoBack && window.history && window.history.length > 1) { window.history.back(); return }
+      if (App.exitApp) App.exitApp()
+    })
+  }
 
   state.gestures = attachGestures({
     canvas: state.canvas,

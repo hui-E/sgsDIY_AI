@@ -31,6 +31,7 @@ export function buildPrompt(character, designReq = '') {
     '4. 技能文本严格遵循三国杀官方技能表述规范，使用官方术语。',
     '5. 势力只能从 魏 / 蜀 / 吴 / 群 / 晋 中五选一。',
     '6. 只输出标准JSON，不要任何前言、解释、markdown、额外说明文字。',
+    '7. 设计完仅检查一次，没问题就输出，禁止过度检查。',
     'JSON字段规范：',
     '{',
     '  "character_name": "人物名称",',

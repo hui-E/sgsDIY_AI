@@ -417,3 +417,7 @@ input::placeholder { color: var(--muted-2); }
 .ai-scroll { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.55; font-size: 12px; max-height: 150px; overflow: auto; }
 .ai-reason pre { color: var(--muted-2); }
 .ai-stream { color: var(--text); }
+
+/* 生成中禁用开始生成 */
+.primary:disabled,
+#ai-generate:disabled { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
