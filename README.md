@@ -20,7 +20,6 @@ node server.js 5173
 - ai生成后，自动获取角色对应图片（支持更换）。
 - 可在ai设计的基础上，对势力、人名、称号、图片、技能名、技能描述进行编辑。
 - 支持填写“武将设计要求”。约束ai生成。
-- ![手机端主界面](.\素材\d5501bfb1426f3124a2611de8df7abc43.jpg)
 
 ## API获取教程
 
@@ -29,7 +28,8 @@ node server.js 5173
 - 接口支持OpenAI兼容协议(`/chat/completions` 接口)，以[智谱](https://www.bigmodel.cn/apikey/platform)为例。
 - 点击新建API key，名称可以随便取。
 - 复制新建的API key，回到软件的AI配置
-- API地址填“https://open.bigmodel.cn/api/paas/v4”，key填刚刚复制的，模型名可进入[体验中心](https://www.bigmodel.cn/trialcenter/modeltrial/text)挑选。（比如可选“GLM-4.5-Flash”）
+- API地址填https://open.bigmodel.cn/api/paas/v4
+- key填刚刚复制的，模型名可进入[体验中心](https://www.bigmodel.cn/trialcenter/modeltrial/text)挑选。（比如可选“GLM-4.5-Flash”）
 - <img src=".\素材\1788094079205.png" alt="image-20260830173147986"  />
 - 一般来说免费模型里，越蠢的模型生成速度越快，越聪明的越慢，热门模型又不稳定，按需选择。
 
