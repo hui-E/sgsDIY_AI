@@ -117,12 +117,11 @@
             <span id="ai-tokens" class="ai-stat"></span>
             <button id="ai-stop" class="ai-stop" type="button" disabled>停止</button>
           </div>
-          <div id="ai-current" class="ai-current hidden"></div>
-          <details id="ai-reason-box" class="ai-reason hidden">
-            <summary>展开完整思考</summary>
-            <pre id="ai-reasoning" class="ai-scroll"></pre>
-          </details>
-          <details id="ai-content-box" class="ai-reason hidden">
+          <div class="ai-current-wrap">
+            <div id="ai-current" class="ai-current hidden"></div>
+            <button id="ai-follow" class="ai-follow hidden" type="button">回到最新 ↓</button>
+          </div>
+                    <details id="ai-content-box" class="ai-reason hidden">
             <summary>展开完整生成</summary>
             <pre id="ai-stream" class="ai-scroll ai-stream"></pre>
           </details>

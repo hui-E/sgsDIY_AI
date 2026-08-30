@@ -343,22 +343,38 @@ input::placeholder { color: var(--muted-2); }
 }
 .ai-config-open:active { transform: translateY(1px); }
 
+.ai-current-wrap { position: relative; margin-bottom: 10px; }
 .ai-current {
-  margin-bottom: 10px;
-  padding: 9px 10px;
+  padding: 12px 14px;
   background: var(--bg-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  font-size: 12px;
-  line-height: 1.5;
   color: var(--accent-2);
+  font-size: 14px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
-  min-height: 2.6em;
-  max-height: 3.4em;
-  overflow: hidden;
+  max-height: min(220px, 30vh);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .ai-current.hidden { display: none; }
+.ai-follow {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-2);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  z-index: 2;
+}
+.ai-follow.hidden { display: none; }
 
 
 .ai-status {

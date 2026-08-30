@@ -61,8 +61,7 @@ const refs = {
   aiElapsed: $('#ai-elapsed'),
   aiTokens: $('#ai-tokens'),
   aiCurrent: $('#ai-current'),
-  aiReasonBox: $('#ai-reason-box'),
-  aiReasoning: $('#ai-reasoning'),
+  aiFollow: $('#ai-follow'),
   aiContentBox: $('#ai-content-box'),
   aiStream: $('#ai-stream'),
 
@@ -223,19 +222,75 @@ let currentAIAbort = null
 let aiElapsedTimer = 0
 let aiElapsedSec = 0
 
+let aiFollowReasoning = true
+let aiPhase = '思考中'
+
+function throttleTail(fn, minMs) {
+  let lastTs = 0, timer = 0, latestArgs = null
+  const invoke = () => { timer = 0; lastTs = Date.now(); fn(...latestArgs) }
+  const wrapped = (...args) => {
+    latestArgs = args
+    const now = Date.now()
+    const wait = minMs - (now - lastTs)
+    if (wait <= 0) { if (timer) clearTimeout(timer); timer = 0; lastTs = now; fn(...args) }
+    else if (!timer) timer = setTimeout(invoke, wait)
+  }
+  wrapped.cancel = () => { if (timer) clearTimeout(timer); timer = 0; latestArgs = null }
+  return wrapped
+}
+
+function summarizeStream(text) {
+  const t = text || ''
+  const campM = t.match(/"camp"\s*[:：]\s*"?([^"',\s{}]+)/i)
+  const hpM = t.match(/"hp"\s*[:：]\s*"?(\d+)/i)
+  const nameM = t.match(/"name"\s*[:：]/g)
+  const parts = []
+  if (campM) parts.push('势力 ' + campM[1])
+  if (hpM) parts.push('体力 ' + hpM[1])
+  if (nameM) parts.push('技能 ' + nameM.length)
+  return parts.length ? '生成中 · ' + parts.join(' · ') : '生成中 · 正在排版武将信息…'
+}
+
+const renderReasoning = (full) => {
+  refs.aiCurrent.textContent = full || ''
+  refs.aiCurrent.classList.remove('hidden')
+  if (aiFollowReasoning) refs.aiCurrent.scrollTop = refs.aiCurrent.scrollHeight
+  else refs.aiFollow.classList.remove('hidden')
+}
+
+const renderContent = throttleTail((full) => {
+  refs.aiCurrent.textContent = summarizeStream(full)
+  refs.aiCurrent.classList.remove('hidden')
+}, 160)
+
+function attachAIFollow() {
+  refs.aiCurrent.addEventListener('scroll', () => {
+    const el = refs.aiCurrent
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 32
+    aiFollowReasoning = nearBottom
+    refs.aiFollow.classList.toggle('hidden', nearBottom)
+  })
+  refs.aiFollow.addEventListener('click', () => {
+    aiFollowReasoning = true
+    refs.aiCurrent.scrollTop = refs.aiCurrent.scrollHeight
+    refs.aiFollow.classList.add('hidden')
+  })
+}
+
 function resetAIView() {
   refs.aiStatus.textContent = ''
   refs.aiElapsed.textContent = '0s'
   refs.aiTokens.textContent = ''
   refs.aiStream.textContent = ''
-  refs.aiReasoning.textContent = ''
   refs.aiCurrent.textContent = ''
   refs.aiCurrent.classList.add('hidden')
-  refs.aiReasonBox.classList.add('hidden')
-  refs.aiReasonBox.open = false
   refs.aiContentBox.classList.add('hidden')
   refs.aiContentBox.open = false
   refs.aiProgress.classList.add('hidden')
+  refs.aiFollow.classList.add('hidden')
+  renderContent.cancel()
+  aiFollowReasoning = true
+  aiPhase = '思考中'
 }
 function goGenerate() {
   refs.edit.classList.add('hidden')
@@ -264,11 +319,7 @@ function goConfigBack() {
   refs.cfgView.classList.add('hidden')
   refs.edit.classList.remove('hidden')
 }
-function latestSnippet(text) {
-  const t = (text || '').replace(/\s+/g, ' ').trim()
-  if (!t) return ''
-  return t.length > 80 ? '… ' + t.slice(-80) : t
-}function aiConfigFromForm() {
+function aiConfigFromForm() {
   return {
     baseUrl: refs.aiBase.value.trim(),
     apiKey: refs.aiKey.value.trim(),
@@ -290,7 +341,7 @@ function startElapsed() {
   aiElapsedTimer = setInterval(() => {
     aiElapsedSec++
     refs.aiElapsed.textContent = aiElapsedSec + 's'
-    refs.aiStatus.textContent = '生成中… ' + aiElapsedSec + 's'
+    refs.aiStatus.textContent = aiPhase + '… ' + aiElapsedSec + 's'
   }, 1000)
 }
 function stopElapsed() {
@@ -324,11 +375,7 @@ async function generateAI() {
   refs.aiStop.disabled = false
   refs.aiProgress.classList.remove('hidden')
   refs.aiCurrent.textContent = ''
-  refs.aiCurrent.classList.remove('hidden')
   refs.aiStream.textContent = ''
-  refs.aiReasoning.textContent = ''
-  refs.aiReasonBox.classList.add('hidden')
-  refs.aiReasonBox.open = false
   refs.aiContentBox.classList.add('hidden')
   refs.aiContentBox.open = false
   refs.aiTokens.textContent = ''
@@ -340,15 +387,13 @@ async function generateAI() {
       character, cfg, signal: currentAIAbort.signal,
       callbacks: {
         onReasoning: (chunk, full) => {
-          refs.aiCurrent.textContent = latestSnippet(full)
-          refs.aiCurrent.classList.remove('hidden')
-          refs.aiReasoning.textContent = full
-          refs.aiReasonBox.classList.remove('hidden')
+          aiPhase = '思考中'
+          renderReasoning(full)
           refs.aiTokens.textContent = '已接收 ' + full.length + ' 字'
         },
         onContent: (chunk, full) => {
-          refs.aiCurrent.textContent = latestSnippet(full)
-          refs.aiCurrent.classList.remove('hidden')
+          aiPhase = '生成中'
+          renderContent(full)
           refs.aiStream.textContent = full
           refs.aiStream.scrollTop = refs.aiStream.scrollHeight
           refs.aiContentBox.classList.remove('hidden')
@@ -404,6 +449,7 @@ async function init() {
   refs.genBack.addEventListener('click', goGenerateBack)
   refs.cfgBack.addEventListener('click', goConfigBack)
   refs.aiSaveConfig.addEventListener('click', saveConfigFromForm)
+  attachAIFollow()
   refs.aiGenerate.addEventListener('click', generateAI)
   refs.aiStop.addEventListener('click', stopAI)
 
