@@ -53,6 +53,7 @@ const refs = {
   aiBase: $('#ai-base'),
   aiKey: $('#ai-key'),
   aiModel: $('#ai-model'),
+  aiDesign: $('#ai-design'),
   aiSaveConfig: $('#ai-save-config'),
   aiGenerate: $('#ai-generate'),
   aiStatus: $('#ai-status'),
@@ -299,6 +300,7 @@ function goGenerate() {
   refs.aiBase.value = cfg.baseUrl || ''
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
+  refs.aiDesign.value = cfg.designReq || ''
   resetAIView()
 }
 function goGenerateBack() {
@@ -313,6 +315,7 @@ function goConfig() {
   refs.aiBase.value = cfg.baseUrl || ''
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
+  refs.aiDesign.value = cfg.designReq || ''
   refs.cfgStatus.textContent = ''
 }
 function goConfigBack() {
@@ -324,6 +327,7 @@ function aiConfigFromForm() {
     baseUrl: refs.aiBase.value.trim(),
     apiKey: refs.aiKey.value.trim(),
     model: refs.aiModel.value.trim(),
+    designReq: refs.aiDesign.value.trim(),
   }
 }
 function saveConfigFromForm() {

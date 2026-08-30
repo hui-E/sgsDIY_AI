@@ -19,15 +19,16 @@ export function saveConfig(cfg) {
   localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(cfg || {}))
 }
 
-export function buildPrompt(character) {
+export function buildPrompt(character, designReq = '') {
   const sys = '你是三国杀卡牌设计师，只输出符合要求的 JSON，不要任何前言、解释、markdown 或额外说明。'
   const user = [
     `请设计${character}的三国杀DIY武将。`,
+    ...(designReq ? ['武将设计要求：', designReq] : []),
     '约束条件：',
     '1. 输出JSON必须包含字段：人物名称、称号、势力、勾玉数（体力值）；技能数量不超过3个。',
     '2. 每个技能名称严格为两个汉字；全部技能描述合计总字数不超过300字。',
-    '3. 参考人物原作百科设定，技能贴合人物能力；技能文本严格遵循三国杀官方技能表述规范，使用官方术语（锁定技、限定技、出牌阶段限一次、当XX时等），对标官方原版武将格式。',
-    '4. 参考三国杀官方现有武将卡牌的设计逻辑与措辞。',
+    '3. 参考人物原作百科设定，技能贴合人物能力；',
+    '4. 技能文本严格遵循三国杀官方技能表述规范，使用官方术语。',
     '5. 势力只能从 魏 / 蜀 / 吴 / 群 / 晋 中五选一。',
     '6. 只输出标准JSON，不要任何前言、解释、markdown、额外说明文字。',
     'JSON字段规范：',
@@ -197,7 +198,7 @@ export async function streamCard({ character, cfg, callbacks = {}, signal }) {
   if (!character) throw new Error('请输入人物名')
   if (!cfg || !cfg.baseUrl) throw new Error('请先配置 API 地址')
   if (!cfg.model) throw new Error('请先配置模型名')
-  const messages = buildPrompt(character)
+  const messages = buildPrompt(character, cfg.designReq || '')
   const { content } = await requestModelStream(cfg, messages, callbacks, signal)
   const raw = extractJSON(content)
   return normalizeResult(raw, character)

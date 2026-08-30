@@ -243,6 +243,22 @@ input::placeholder { color: var(--muted-2); }
 }
 .skill-card textarea:focus { border-color: var(--accent); }
 
+.card-form textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 13px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  font-family: inherit;
+}
+.card-form textarea:focus { border-color: var(--accent); }
+.card-form textarea::placeholder { color: var(--muted-2); }
+
 /* layout */
 .canvas-wrap {
   flex: 1;
