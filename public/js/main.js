@@ -54,8 +54,22 @@ const refs = {
   aiBase: $('#ai-base'),
   aiKey: $('#ai-key'),
   aiModel: $('#ai-model'),
+  aiModelsBtn: $('#ai-models-btn'),
+  modelSheet: $('#model-sheet'),
+  modelSheetCard: $('#model-sheet-card'),
+  modelSheetHandle: $('#model-sheet-handle'),
+  modelSheetClose: $('#model-sheet-close'),
+  modelSheetList: $('#model-sheet-list'),
   aiDesign: $('#ai-design'),
   aiSaveConfig: $('#ai-save-config'),
+  aiSavePreset: $('#ai-save-preset'),
+  aiPresetListBtn: $('#ai-preset-list-btn'),
+  presetModal: $('#preset-modal'),
+  presetModalTitle: $('#preset-modal-title'),
+  presetModalName: $('#preset-modal-name'),
+  presetModalList: $('#preset-modal-list'),
+  presetModalCancel: $('#preset-modal-cancel'),
+  presetModalConfirm: $('#preset-modal-confirm'),
   aiGenerate: $('#ai-generate'),
   aiStatus: $('#ai-status'),
   aiProgress: $('#ai-progress'),
@@ -73,6 +87,7 @@ const refs = {
 }
 
 let toastTimer = 0
+let presetModalMode = 'save'
 function toast(msg) {
   refs.toast.textContent = msg
   refs.toast.classList.remove('hidden')
@@ -277,7 +292,7 @@ async function save() {
     try {
       const albumDir = await resolveAlbum(Media)
       const fileName = await nextAlbumName(albumDir, base)
-      toast('正在保存到：' + (albumDir || '相册') + '/' + fileName)
+      toast('保存至：' + (albumDir || '相册') + '/' + fileName)
       const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
       const dataUrl = await blobToDataUrl(blob)
       await Media.savePhoto({ path: dataUrl, fileName, albumIdentifier: albumDir })
@@ -287,7 +302,7 @@ async function save() {
     return
   }
   const filename = filenameFor(state.card, 'jpg')
-  toast('正在保存到：' + filename)
+  toast('保存至：' + filename)
   try {
     const blob = await renderCardImage(state.card, state.assets, 'image/jpeg', 0.92)
     const shared = await shareBlob(blob, filename, 'image/jpeg')
@@ -380,8 +395,9 @@ function goGenerate() {
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
   refs.aiDesign.value = cfg.designReq || ''
-  refs.aiImgId.value = cfg.imgId || ''
-  refs.aiImgKey.value = cfg.imgKey || ''
+  const img = AI.loadImgConfig()
+  refs.aiImgId.value = img.imgId || ''
+  refs.aiImgKey.value = img.imgKey || ''
   resetAIView()
 }
 function goGenerateBack() {
@@ -397,13 +413,16 @@ function goConfig() {
   refs.aiKey.value = cfg.apiKey || ''
   refs.aiModel.value = cfg.model || ''
   refs.aiDesign.value = cfg.designReq || ''
-  refs.aiImgId.value = cfg.imgId || ''
-  refs.aiImgKey.value = cfg.imgKey || ''
+  const img = AI.loadImgConfig()
+  refs.aiImgId.value = img.imgId || ''
+  refs.aiImgKey.value = img.imgKey || ''
   refs.cfgStatus.textContent = ''
+  closePresetModal()
 }
 function goConfigBack() {
   refs.cfgView.classList.add('hidden')
   refs.edit.classList.remove('hidden')
+  closeModelSheet()
 }
 function aiConfigFromForm() {
   return {
@@ -411,6 +430,10 @@ function aiConfigFromForm() {
     apiKey: refs.aiKey.value.trim(),
     model: refs.aiModel.value.trim(),
     designReq: refs.aiDesign.value.trim(),
+  }
+}
+function imgConfigFromForm() {
+  return {
     imgId: refs.aiImgId.value.trim(),
     imgKey: refs.aiImgKey.value.trim(),
   }
@@ -420,9 +443,233 @@ function saveConfigFromForm() {
   if (!cfg.baseUrl) { refs.cfgStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
   if (!cfg.model) { refs.cfgStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
   AI.saveConfig(cfg)
+  AI.saveImgConfig(imgConfigFromForm())
   toast('配置已保存')
   goConfigBack()
 }
+
+function saveAsPresetFromTop() {
+  const cfg = aiConfigFromForm()
+  if (!cfg.baseUrl) { refs.cfgStatus.textContent = '请填写 API 地址'; toast('请填写 API 地址'); return }
+  if (!cfg.model) { refs.cfgStatus.textContent = '请填写模型名'; toast('请填写模型名'); return }
+  presetModalMode = 'save'
+  refs.presetModalTitle.textContent = '存至预设'
+  refs.presetModalName.value = ''
+  refs.presetModalName.classList.remove('hidden')
+  refs.presetModalList.classList.add('hidden')
+  refs.presetModalConfirm.classList.remove('hidden')
+  openPresetModal()
+}
+
+function openPresetList() {
+  presetModalMode = 'list'
+  refs.presetModalTitle.textContent = '配置列表'
+  refs.presetModalName.classList.add('hidden')
+  refs.presetModalList.classList.remove('hidden')
+  refs.presetModalConfirm.classList.add('hidden')
+  renderPresetRows()
+  openPresetModal()
+}
+
+function renderPresetRows() {
+  const presets = AI.loadPresets()
+  const names = Object.keys(presets)
+  const list = refs.presetModalList
+  list.innerHTML = ''
+  if (!names.length) {
+    const empty = document.createElement('div')
+    empty.className = 'preset-empty'
+    empty.textContent = '暂无已存预设'
+    list.appendChild(empty)
+    return
+  }
+  for (const name of names) {
+    const row = document.createElement('div')
+    row.className = 'preset-row-item'
+    row.dataset.name = name
+
+    const nm = document.createElement('span')
+    nm.className = 'preset-row-name'
+    nm.textContent = name
+    nm.title = name
+    row.appendChild(nm)
+
+    const del = document.createElement('button')
+    del.className = 'preset-row-del'
+    del.type = 'button'
+    del.textContent = '删除'
+    row.appendChild(del)
+
+    list.appendChild(row)
+  }
+}
+
+function enterPresetRowConfirm(row) {
+  const name = row.dataset.name
+  row.className = 'preset-row-item preset-row-confirm'
+  row.innerHTML = ''
+  const txt = document.createElement('span')
+  txt.className = 'preset-confirm-text'
+  txt.textContent = '确认删除？'
+  const yes = document.createElement('button')
+  yes.className = 'preset-confirm-yes'
+  yes.type = 'button'
+  yes.textContent = '确认'
+  const no = document.createElement('button')
+  no.className = 'preset-confirm-no'
+  no.type = 'button'
+  no.textContent = '取消'
+  row.appendChild(txt)
+  row.appendChild(yes)
+  row.appendChild(no)
+}
+
+function loadPresetByName(name) {
+  const presets = AI.loadPresets()
+  const cfg = presets[name]
+  if (!cfg) { toast('预设不存在或已删除'); return }
+  refs.aiBase.value = cfg.baseUrl || ''
+  refs.aiKey.value = cfg.apiKey || ''
+  refs.aiModel.value = cfg.model || ''
+  refs.aiDesign.value = cfg.designReq || ''
+  AI.saveActiveName(name)
+  closePresetModal()
+  refs.cfgStatus.textContent = '已载入预设：' + name
+  toast('已读取预设')
+}
+
+function onPresetListClick(e) {
+  const row = e.target.closest('.preset-row-item')
+  if (!row) return
+  const name = row.dataset.name
+  const t = e.target
+  if (t.classList.contains('preset-row-del')) {
+    enterPresetRowConfirm(row)
+  } else if (t.classList.contains('preset-confirm-yes')) {
+    AI.removePreset(name)
+    renderPresetRows()
+  } else if (t.classList.contains('preset-confirm-no')) {
+    renderPresetRows()
+  } else if (t.classList.contains('preset-row-name')) {
+    loadPresetByName(name)
+  }
+}
+
+function confirmPresetModal() {
+  if (presetModalMode !== 'save') return
+  const name = refs.presetModalName.value.trim()
+  if (!name) { toast('请输入预设名'); return }
+  const cfg = aiConfigFromForm()
+  AI.saveAsPreset(name, cfg)
+  AI.saveImgConfig(imgConfigFromForm())
+  closePresetModal()
+  toast('已存至预设')
+}
+
+function openPresetModal() { refs.presetModal.classList.remove('hidden') }
+function closePresetModal() { refs.presetModal.classList.add('hidden') }
+  let modelSheetDrag = false
+  let modelSheetStartY = 0
+  let modelSheetDy = 0
+
+  function renderModelSheet(ids) {
+    const list = refs.modelSheetList
+    list.innerHTML = ''
+    if (!ids.length) {
+      const empty = document.createElement('div')
+      empty.className = 'sheet-empty'
+      empty.textContent = '未获取到模型'
+      list.appendChild(empty)
+      return
+    }
+    for (const id of ids) {
+      const row = document.createElement('div')
+      row.className = 'sheet-row'
+      row.dataset.model = id
+      row.textContent = id
+      list.appendChild(row)
+    }
+  }
+
+  function openModelSheet() {
+    const mask = refs.modelSheet
+    mask.classList.remove('hidden')
+    void mask.offsetWidth
+    mask.classList.add('show')
+  }
+
+  function closeModelSheet() {
+    const mask = refs.modelSheet
+    const card = refs.modelSheetCard
+    card.style.transition = ''
+    card.style.transform = ''
+    mask.classList.remove('show')
+    setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+  }
+
+  function onModelSheetSelect(e) {
+    const row = e.target.closest('.sheet-row')
+    if (!row) return
+    refs.aiModel.value = row.dataset.model || ''
+    closeModelSheet()
+  }
+
+  function setupModelSheetDrag() {
+    const card = refs.modelSheetCard
+    const handle = refs.modelSheetHandle
+    const mask = refs.modelSheet
+    handle.addEventListener('pointerdown', (e) => {
+      modelSheetDrag = true
+      modelSheetStartY = e.clientY
+      modelSheetDy = 0
+      card.style.transition = 'none'
+      if (handle.setPointerCapture) { try { handle.setPointerCapture(e.pointerId) } catch (err) {} }
+    })
+    handle.addEventListener('pointermove', (e) => {
+      if (!modelSheetDrag) return
+      modelSheetDy = Math.max(0, e.clientY - modelSheetStartY)
+      card.style.transform = 'translateY(' + modelSheetDy + 'px)'
+    })
+    const release = () => {
+      if (!modelSheetDrag) return
+      modelSheetDrag = false
+      if (modelSheetDy > 120) {
+        card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
+        card.style.transform = 'translateY(100%)'
+        mask.classList.remove('show')
+        setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+      } else {
+        card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
+        card.style.transform = ''
+      }
+      modelSheetDy = 0
+    }
+    handle.addEventListener('pointerup', release)
+    handle.addEventListener('pointercancel', release)
+  }
+
+async function fetchModelList() {
+  const baseUrl = refs.aiBase.value.trim()
+  const apiKey = refs.aiKey.value.trim()
+  if (!baseUrl) { refs.cfgStatus.textContent = '请先填写 API 地址'; toast('请先填写 API 地址'); return }
+  refs.aiModelsBtn.disabled = true
+  refs.aiModelsBtn.textContent = '获取中…'
+  refs.cfgStatus.textContent = '正在获取模型列表…'
+  try {
+    const ids = await AI.fetchModels({ baseUrl, apiKey })
+    if (!ids.length) { refs.cfgStatus.textContent = '接口未返回可用模型'; toast('未获取到模型'); return }
+    renderModelSheet(ids)
+    refs.cfgStatus.textContent = '获取到 ' + ids.length + ' 个模型'
+    openModelSheet()
+  } catch (e) {
+    refs.cfgStatus.textContent = (e && e.message) || '获取模型列表失败'
+    toast('获取模型列表失败，请手动填写模型名')
+  } finally {
+    refs.aiModelsBtn.disabled = false
+    refs.aiModelsBtn.textContent = '获取模型列表'
+  }
+}
+
 function startElapsed() {
   aiElapsedSec = 0
   refs.aiElapsed.textContent = '0s'
@@ -468,7 +715,7 @@ function updatePortraitPreview(src, label) {
 }
 
 async function applyAIPortrait() {
-  const cfg = AI.loadConfig()
+  const cfg = AI.loadImgConfig()
   if (!cfg || !cfg.imgId || !cfg.imgKey) return
   const term = cleanPortraitTerm(refs.aiCharacter.value)
   if (!term) return
@@ -612,6 +859,18 @@ async function init() {
   refs.genBack.addEventListener('click', goGenerateBack)
   refs.cfgBack.addEventListener('click', goConfigBack)
   refs.aiSaveConfig.addEventListener('click', saveConfigFromForm)
+  refs.aiSavePreset.addEventListener('click', saveAsPresetFromTop)
+  refs.aiPresetListBtn.addEventListener('click', openPresetList)
+  refs.aiModelsBtn.addEventListener('click', fetchModelList)
+  refs.modelSheetClose.addEventListener('click', closeModelSheet)
+  refs.modelSheet.addEventListener('click', (e) => { if (e.target === refs.modelSheet) closeModelSheet() })
+  refs.modelSheetList.addEventListener('click', onModelSheetSelect)
+  setupModelSheetDrag()
+  refs.presetModalCancel.addEventListener('click', closePresetModal)
+  refs.presetModalConfirm.addEventListener('click', confirmPresetModal)
+  refs.presetModal.addEventListener('click', (e) => { if (e.target === refs.presetModal) closePresetModal() })
+  refs.presetModalName.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmPresetModal() })
+  refs.presetModalList.addEventListener('click', onPresetListClick)
   attachAIFollow()
   refs.aiGenerate.addEventListener('click', generateAI)
   refs.aiStop.addEventListener('click', stopAI)

@@ -1,6 +1,7 @@
 import { CARD_W, CARD_H, FACTIONS, FACTION_LABEL } from './data.js'
 
 export const BRUSH_FONT = "'SGS Brush','Ma Shan Zheng','Kaiti SC','STKaiti','KaiTi',cursive"
+export const SKILL_NAME_FONT = "'PingFang SC','Microsoft YaHei','Heiti SC','SimHei','STHeiti',system-ui,sans-serif"
 export const DESC_FONT = "'PingFang SC','Microsoft YaHei','Hiragino Sans GB',system-ui,sans-serif"
 
 // 布局常量（卡面逻辑坐标 1425x2048）
@@ -24,20 +25,20 @@ export const LAYOUT = {
 
   skillLeft: 64,
   boxW: 216,
-  boxH: 104,
+  boxH: 116,
   boxScale: 1,
   descLeft: 312,
   descRightMargin: 34,
   descFont: 46,
   descLineH: 58,
-  skillNameFont: 46,
-  skillGap: 52,
+  skillNameFont: 52,
+  skillGap: 26,
   bandPadTop: 26,
   bandPadBottom: 44,
 }
 
-function withFont(ctx, family, size) {
-  ctx.font = `${size}px ${family}`
+function withFont(ctx, family, size, weight = '') {
+  ctx.font = `${weight ? weight + ' ' : ''}${size}px ${family}`
 }
 
 function fillText(ctx, text, x, y, fill, stroke, strokeW) {
@@ -204,7 +205,7 @@ function drawSkillContent(ctx, card, assets, rows) {
       ctx.drawImage(box, bx, by, bw, bh)
       // 技能名（在框内居中偏左）
       ctx.save()
-      withFont(ctx, BRUSH_FONT, L.skillNameFont)
+      withFont(ctx, SKILL_NAME_FONT, L.skillNameFont, '700')
       ctx.textAlign = 'center'
       fillText(ctx, r.name, bx + bw * 0.44, by + bh / 2 + 2, '#3a2410', 'rgba(255,246,220,0.55)', 4)
       ctx.restore()

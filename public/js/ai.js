@@ -1,5 +1,10 @@
 // ai.js — AI 设计：提示词构造、OpenAI 兼容调用、JSON 解析与归一化
 export const AI_CONFIG_KEY = 'sgsAiConfig'
+export const CURRENT_CONFIG_KEY = 'sgsCurrentConfig'
+export const AI_PRESETS_KEY = 'sgsAiPresets'
+export const AI_ACTIVE_KEY = 'sgsAiActivePreset'
+export const IMG_CONFIG_KEY = 'sgsImgConfig'
+export const AI_FIELDS = ['baseUrl', 'apiKey', 'model', 'designReq']
 export const MAX_AI_SKILLS = 3
 export const MIN_AI_SKILLS = 1
 export const MAX_AI_HP = 10
@@ -11,12 +16,72 @@ const CAMP_MAP = {
   'wei': 'wei', 'shu': 'shu', 'wu': 'wu', 'qun': 'qun', 'jin': 'jin',
 }
 
+export function loadPresets() {
+  try { return JSON.parse(localStorage.getItem(AI_PRESETS_KEY)) || {} } catch { return {} }
+}
+
+export function savePresets(presets) {
+  localStorage.setItem(AI_PRESETS_KEY, JSON.stringify(presets || {}))
+}
+
+export function loadActiveName() {
+  return localStorage.getItem(AI_ACTIVE_KEY) || ''
+}
+
+export function saveActiveName(name) {
+  if (name) localStorage.setItem(AI_ACTIVE_KEY, String(name))
+  else localStorage.removeItem(AI_ACTIVE_KEY)
+}
+
 export function loadConfig() {
-  try { return JSON.parse(localStorage.getItem(AI_CONFIG_KEY)) || {} } catch { return {} }
+  // 优先返回当前正在使用的配置（普通保存的目标）
+  try {
+    const cur = JSON.parse(localStorage.getItem(CURRENT_CONFIG_KEY)) || {}
+    if (cur && (cur.baseUrl || cur.model)) return cur
+  } catch {}
+  const presets = loadPresets()
+  const active = loadActiveName()
+  if (active && presets[active]) return presets[active]
+  // 兼容旧的单份配置
+  try {
+    const old = JSON.parse(localStorage.getItem(AI_CONFIG_KEY)) || {}
+    if (old && (old.baseUrl || old.model)) return old
+  } catch {}
+  return {}
 }
 
 export function saveConfig(cfg) {
-  localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(cfg || {}))
+  // 普通保存：写入当前使用配置，不产生命名预设
+  const clean = {}
+  for (const k of AI_FIELDS) if (cfg && cfg[k] !== undefined) clean[k] = cfg[k]
+  try { localStorage.setItem(CURRENT_CONFIG_KEY, JSON.stringify(clean)) } catch {}
+  try { localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(clean)) } catch {}
+}
+
+export function saveAsPreset(name, cfg) {
+  const presets = loadPresets()
+  const clean = { name }
+  for (const k of AI_FIELDS) if (cfg && cfg[k] !== undefined) clean[k] = cfg[k]
+  presets[name] = clean
+  savePresets(presets)
+  saveActiveName(name)
+  saveConfig(cfg)
+}
+
+export function removePreset(name) {
+  const presets = loadPresets()
+  if (!(name in presets)) return
+  delete presets[name]
+  savePresets(presets)
+  if (loadActiveName() === name) saveActiveName('')
+}
+
+export function loadImgConfig() {
+  try { return JSON.parse(localStorage.getItem(IMG_CONFIG_KEY)) || {} } catch { return {} }
+}
+
+export function saveImgConfig(cfg) {
+  localStorage.setItem(IMG_CONFIG_KEY, JSON.stringify(cfg || {}))
 }
 
 export function buildPrompt(character, designReq = '') {
@@ -56,8 +121,70 @@ export function extractJSON(text) {
   const start = t.indexOf('{')
   const end = t.lastIndexOf('}')
   if (start < 0 || end < start) throw new Error('返回内容中未找到 JSON')
-  try { return JSON.parse(t.slice(start, end + 1)) }
-  catch { throw new Error('JSON 解析失败') }
+  return parseTolerant(t.slice(start, end + 1))
+}
+
+// 逐级容错：直接解析失败时做字符串感知修复，再尝试
+function parseTolerant(body) {
+  const candidates = [
+    body,
+    repairQuotes(body),
+    stripTrailingCommas(repairQuotes(body)),
+  ]
+  for (const c of candidates) {
+    try { return JSON.parse(c) } catch {}
+  }
+  throw new Error('JSON 解析失败')
+}
+
+// 字符串感知：把字符串内容里的裸英文双引号转义为 \"，不触碰合法定界符
+function repairQuotes(s) {
+  let out = ''
+  let inStr = false
+  let esc = false
+  const structural = (ch) => ch === undefined || ch === ',' || ch === '}' || ch === ']' || ch === ':' || /\s/.test(ch)
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (inStr) {
+      if (esc) { out += c; esc = false; continue }
+      if (c === '\\') { out += c; esc = true; continue }
+      if (c === '"') {
+        if (structural(s[i + 1])) { out += '"'; inStr = false }
+        else { out += '\\"' }
+        continue
+      }
+      out += c
+      continue
+    }
+    if (c === '"') { inStr = true; out += c; continue }
+    out += c
+  }
+  return out
+}
+
+// 字符串感知：去掉数组/对象末尾的尾逗号
+function stripTrailingCommas(s) {
+  let out = ''
+  let inStr = false
+  let esc = false
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (inStr) {
+      out += c
+      if (esc) esc = false
+      else if (c === '\\') esc = true
+      else if (c === '"') inStr = false
+      continue
+    }
+    if (c === '"') { inStr = true; out += c; continue }
+    if (c === ',') {
+      let j = i + 1
+      while (j < s.length && /\s/.test(s[j])) j++
+      if (s[j] === '}' || s[j] === ']') { continue }
+    }
+    out += c
+  }
+  return out
 }
 
 export function normalizeResult(raw, fallbackName = '') {
@@ -103,6 +230,35 @@ export function endpoint(baseUrl) {
   if (/\/chat\/completions$/i.test(u)) return u
   return u + '/chat/completions'
 }
+function nativeHttp() {
+  if (window.CapacitorHttp && window.CapacitorHttp.request) return window.CapacitorHttp
+  if (window.Capacitor && window.Capacitor.Http && window.Capacitor.Http.request) return window.Capacitor.Http
+  return null
+}
+
+export async function fetchModels(cfg) {
+  if (!cfg || !cfg.baseUrl) throw new Error('请先填写 API 地址')
+  const base = String(cfg.baseUrl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+  const url = base + '/models'
+  if (isNative()) {
+    const plugin = getNativePlugin()
+    if (!plugin || typeof plugin.models !== 'function') throw new Error('原生 HTTP 插件未加载')
+    const r = await plugin.models({ baseUrl: base, apiKey: cfg.apiKey || '' })
+    const list = r && r.data
+    return Array.isArray(list) ? list.map((m) => (typeof m === 'string' ? m : (m && m.id) || '')).filter(Boolean) : []
+  }
+  const res = await fetch('/api/ai/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ baseUrl: cfg.baseUrl, apiKey: cfg.apiKey || '' }),
+  })
+  let j = null
+  try { j = await res.json() } catch {}
+  if (!res.ok || !j) throw new Error((j && j.error) || '获取模型列表失败')
+  if (!j.ok) throw new Error(j.error || '获取模型列表失败')
+  return Array.isArray(j.data) ? j.data : []
+}
+
 
 function isNative() {
   return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())

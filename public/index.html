@@ -139,10 +139,14 @@
           <h1>AI 配置</h1>
           <p class="subtitle">OpenAI 兼容接口</p>
         </div>
-        <span class="step-badge">配置</span>
+        <div class="cfg-actions">
+          <button id="ai-save-preset" class="ghost sm" type="button">存至预设</button>
+          <button id="ai-preset-list-btn" class="ghost sm" type="button">配置列表</button>
+        </div>
       </header>
 
       <div class="card-form">
+        <div class="field-divider">AI 模型</div>
         <div class="field">
           <label>API 地址</label>
           <input id="ai-base" type="text" placeholder="https://api.openai.com/v1" autocomplete="off">
@@ -153,12 +157,16 @@
         </div>
         <div class="field">
           <label>模型名</label>
-          <input id="ai-model" type="text" placeholder="gpt-4o-mini" autocomplete="off">
+          <div class="model-row">
+            <input id="ai-model" type="text" placeholder="gpt-4o-mini" autocomplete="off">
+            <button id="ai-models-btn" class="ghost sm" type="button">获取模型列表</button>
+          </div>
         </div>
         <div class="field">
           <label>武将设计要求</label>
           <textarea id="ai-design" rows="4" placeholder="可选，例如：擅长冰系技能；性格冷酷；至少包含一个防御技能"></textarea>
         </div>
+        <div class="field-divider">图片服务</div>
         <div class="field">
           <label>图片服务 ID</label>
           <input id="ai-img-id" type="text" placeholder="如 10020533" autocomplete="off">
@@ -172,7 +180,28 @@
       </div>
     </section>
   </div>
-<div id="toast" class="toast hidden"></div>
+  <div id="preset-modal" class="modal-mask hidden">
+    <div class="modal-card">
+      <h3 id="preset-modal-title">保存配置</h3>
+      <input id="preset-modal-name" type="text" placeholder="输入预设名" autocomplete="off">
+      <div id="preset-modal-list" class="preset-modal-list hidden"></div>
+      <div class="modal-actions">
+        <button id="preset-modal-cancel" class="ghost" type="button">取消</button>
+        <button id="preset-modal-confirm" class="primary sm" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="model-sheet" class="sheet-mask hidden">
+    <div class="sheet-card" id="model-sheet-card">
+      <div class="sheet-handle" id="model-sheet-handle" aria-hidden="true"><span></span></div>
+      <div class="sheet-head">
+        <h3>选择模型</h3>
+        <button id="model-sheet-close" class="sheet-close" type="button" aria-label="关闭">×</button>
+      </div>
+      <div id="model-sheet-list" class="sheet-list"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast hidden"></div>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

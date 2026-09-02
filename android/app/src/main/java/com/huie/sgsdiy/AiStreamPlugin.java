@@ -85,6 +85,68 @@ public class AiStreamPlugin extends Plugin {
         call.resolve();
     }
 
+    @PluginMethod
+    public void models(PluginCall call) {
+        final String baseUrl = call.getString("baseUrl");
+        final String apiKey = call.getString("apiKey");
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            call.reject("缺少 baseUrl");
+            return;
+        }
+        Thread thread = new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                String urlStr = baseUrl;
+                while (urlStr.endsWith("/")) { urlStr = urlStr.substring(0, urlStr.length() - 1); }
+                urlStr = urlStr + "/models";
+                URL url = new URL(urlStr);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(20000);
+                conn.setRequestProperty("Accept", "application/json");
+                if (apiKey != null && !apiKey.isEmpty()) {
+                    conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+                }
+                int status = conn.getResponseCode();
+                String body = readFull(status >= 200 && status < 300 ? conn.getInputStream() : conn.getErrorStream());
+                if (status < 200 || status >= 300) {
+                    final PluginCall c = call;
+                    final String msg = "HTTP " + status + (body != null && !body.isEmpty() ? "：" + body : "");
+                    bridge.executeOnMainThread(() -> c.reject(msg));
+                    return;
+                }
+                JSONObject json = new JSONObject(body == null ? "{}" : body);
+                Object data = json.opt("data");
+                JSObject ret = new JSObject();
+                if (data instanceof JSONArray) { ret.put("data", (JSONArray) data); }
+                else { ret.put("data", new JSONArray()); }
+                final PluginCall c = call;
+                final JSObject result = ret;
+                bridge.executeOnMainThread(() -> c.resolve(result));
+            } catch (Exception e) {
+                final PluginCall c = call;
+                final String msg = String.valueOf(e.getMessage());
+                bridge.executeOnMainThread(() -> c.reject(msg));
+            } finally {
+                if (conn != null) { try { conn.disconnect(); } catch (Exception ignored) {} }
+            }
+        });
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private String readFull(InputStream in) {
+        if (in == null) return "";
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            char[] buf = new char[4096];
+            int n;
+            while ((n = r.read(buf)) != -1) sb.append(buf, 0, n);
+        } catch (Exception ignored) {}
+        return sb.toString();
+    }
+
     private void emit(final String event, final JSObject data) {
         bridge.executeOnMainThread(() -> notifyListeners(event, data));
     }
