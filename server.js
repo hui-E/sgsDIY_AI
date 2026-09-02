@@ -51,6 +51,26 @@ function postJson(u, bodyObj, headers) {
   })
 }
 
+function getJson(u, headers) {
+  return new Promise((resolve, reject) => {
+    const lib = u.protocol === 'https:' ? https : http
+    const req = lib.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || (u.protocol === 'https:' ? 443 : 80),
+      path: u.pathname + u.search,
+      method: 'GET',
+      headers: Object.assign({ 'Content-Type': 'application/json', 'Accept': 'application/json' }, headers || {}),
+    }, (res) => {
+      const chunks = []
+      res.on('data', (c) => chunks.push(c))
+      res.on('end', () => resolve({ status: res.statusCode, text: Buffer.concat(chunks).toString('utf8') }))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
 function streamProxy(u, bodyObj, headers, res) {
   const lib = u.protocol === 'https:' ? https : http
   const data = JSON.stringify(bodyObj)
@@ -141,6 +161,37 @@ http.createServer((req, res) => {
         const content = j && j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: true, content: typeof content === 'string' ? content : '' }))
+      } catch (e) {
+        res.writeHead(502, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: false, error: '代理请求失败: ' + e.message }))
+      }
+    })
+    return
+  }
+
+
+  if (urlPath === '/api/ai/models') {
+    if (req.method !== 'POST') { res.writeHead(405); res.end('method not allowed'); return }
+    let body = ''
+    req.on('data', (c) => { body += c })
+    req.on('end', async () => {
+      let cfg
+      try { cfg = JSON.parse(body || '{}') } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return }
+      const baseUrl = cfg.baseUrl, apiKey = cfg.apiKey
+      if (!baseUrl) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '缺少 baseUrl' })); return }
+      let u
+      try {
+        let base = String(baseUrl).trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '')
+        u = new URL(base + '/models')
+      } catch { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'baseUrl 无效' })); return }
+      try {
+        const r = await getJson(u, { Authorization: 'Bearer ' + (apiKey || '') })
+        if (r.status < 200 || r.status >= 300) { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游 ' + r.status + ': ' + r.text.slice(0, 200) })); return }
+        let j
+        try { j = JSON.parse(r.text) } catch { res.writeHead(502, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: '上游返回非 JSON' })); return }
+        const data = Array.isArray(j && j.data) ? j.data.map((m) => (typeof m === 'string' ? m : (m && m.id) || '')).filter(Boolean) : []
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ ok: true, data }))
       } catch (e) {
         res.writeHead(502, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ ok: false, error: '代理请求失败: ' + e.message }))
