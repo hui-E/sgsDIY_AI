@@ -23,8 +23,18 @@ desktop.ini
 !.env.example
 *.key
 *.pem
+*.jks
+*.keystore
+keystore.properties
+*.apk
+*.aab
 
 # Local dev artifacts (never commit)
 tmp/
 docs/
 素材/成品展示.jpg
+
+# Private/dev-only assets (not for public repo)
+tools/
+public/assets/reference.jpg
+图标.png
