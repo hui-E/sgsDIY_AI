@@ -8,6 +8,7 @@ import { attachGestures } from './gestures.js'
 import { renderPNG, renderCardImage, baseNameFor, downloadBlob, filenameFor, shareBlob } from './export.js'
 import * as AI from './ai.js'
 import { searchImages, loadImageFromUrl, isNative } from './image.js'
+import * as RND from './random.js'
 
 const $ = (s) => document.querySelector(s)
 
@@ -83,11 +84,70 @@ const refs = {
   imgSwap: $('#img-swap'),
   aiImgId: $('#ai-img-id'),
   aiImgKey: $('#ai-img-key'),
+  rnd: $('#random-view'),
+  rndHome: $('#rnd-home'),
+  rndPresetList: $('#rnd-preset-list'),
+  rndNew: $('#rnd-new'),
+  rndDraw: $('#rnd-draw'),
+  rndBack: $('#rnd-back'),
+  rndDrawTitle: $('#rnd-draw-title'),
+  rndDrawSub: $('#rnd-draw-sub'),
+  rndEditBtn: $('#rnd-edit-btn'),
+  rndSound: $('#rnd-sound'),
+  rndSoundOn: $('#rnd-sound-on'),
+  rndSoundOff: $('#rnd-sound-off'),
+  rndCountMinus: $('#rnd-count-minus'),
+  rndCount: $('#rnd-count'),
+  rndCountPlus: $('#rnd-count-plus'),
+  rndReplaceField: $('#rnd-replace-field'),
+  rndReplaceToggle: $('#rnd-replace-toggle'),
+  rndReplaceLabel: $('#rnd-replace-label'),
+  rndStatus: $('#rnd-status'),
+  rndDrawBtn: $('#rnd-draw-btn'),
+  rndResult: $('#rnd-result'),
+  rndEdit: $('#rnd-edit'),
+  rndEditBack: $('#rnd-edit-back'),
+  rndEditTitle: $('#rnd-edit-title'),
+  rndEditSub: $('#rnd-edit-sub'),
+  rndDelPreset: $('#rnd-del-preset'),
+  rndDelModal: $('#rnd-del-modal'),
+  rndDelName: $('#rnd-del-name'),
+  rndDelNo: $('#rnd-del-no'),
+  rndDelYes: $('#rnd-del-yes'),
+  rndPreview: $('#rnd-preview'),
+  rndSave: $('#rnd-save'),
+  rndEditStatus: $('#rnd-edit-status'),
+  rndEntries: $('#rnd-entries'),
+  rndAddEntry: $('#rnd-add-entry'),
+  drawer: $('#drawer'),
+  drawerCard: $('#drawer-card'),
+  rndNameModal: $('#rnd-name-modal'),
+  rndNameTitle: $('#rnd-name-title'),
+  rndNameInput: $('#rnd-name-input'),
+  rndNameCancel: $('#rnd-name-cancel'),
+  rndNameConfirm: $('#rnd-name-confirm'),
 
 }
 
 let toastTimer = 0
 let presetModalMode = 'save'
+
+const rndState = {
+  currentName: '',
+  originalName: '',
+  entries: [],
+  editFrom: 'home',
+}
+let rndNameMode = 'new'
+let rndSoundOn = true
+let rndAudioCtx = null
+
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+
+let drawerDrag = false
+let drawerStartX = 0
+let drawerDx = 0
+let drawerCloseTimer = 0
 function toast(msg) {
   refs.toast.textContent = msg
   refs.toast.classList.remove('hidden')
@@ -604,7 +664,9 @@ function closePresetModal() { refs.presetModal.classList.add('hidden') }
     card.style.transition = ''
     card.style.transform = ''
     mask.classList.remove('show')
-    setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+    clearTimeout(drawerCloseTimer)
+
+  drawerCloseTimer = setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
   }
 
   function onModelSheetSelect(e) {
@@ -637,7 +699,9 @@ function closePresetModal() { refs.presetModal.classList.add('hidden') }
         card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
         card.style.transform = 'translateY(100%)'
         mask.classList.remove('show')
-        setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+        clearTimeout(drawerCloseTimer)
+
+  drawerCloseTimer = setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
       } else {
         card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
         card.style.transform = ''
@@ -832,6 +896,461 @@ async function generateAI() {
   }
 }
 
+// ---------- 左抽屉导航 ----------
+function hideAllViews() {
+  ;[refs.edit, refs.layout, refs.genView, refs.cfgView, refs.rnd].forEach((v) => v.classList.add('hidden'))
+}
+function openDrawer() {
+  const mask = refs.drawer
+  clearTimeout(drawerCloseTimer)
+  mask.classList.remove('hidden')
+  void mask.offsetWidth
+  mask.classList.add('show')
+}
+function closeDrawer() {
+  const mask = refs.drawer
+  const card = refs.drawerCard
+  card.style.transition = ''
+  card.style.transform = ''
+  mask.classList.remove('show')
+  clearTimeout(drawerCloseTimer)
+
+  drawerCloseTimer = setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+}
+function onDrawerItemClick(e) {
+  // drawer-card 在 pointerdown 时 setPointerCapture，会把 click 的 target
+  // 重定向给卡片本身，导致 e.target.closest 命中不到菜单项。
+  // 这里用坐标回退，命中不了再取真实点击位置下的元素。
+  const findItem = (el) => (el && el.closest ? el.closest('.drawer-item') : null)
+  const item = findItem(e.target) || findItem(document.elementFromPoint(e.clientX, e.clientY))
+  if (!item) return
+  const mod = item.dataset.module
+  closeDrawer()
+  if (mod === 'random') goRandom()
+  else goEditMain()
+}
+function setupDrawerDrag() {
+  const card = refs.drawerCard
+  const mask = refs.drawer
+  card.addEventListener('pointerdown', (e) => {
+    drawerDrag = true
+    drawerStartX = e.clientX
+    drawerDx = 0
+    card.style.transition = 'none'
+    if (card.setPointerCapture) { try { card.setPointerCapture(e.pointerId) } catch (err) {} }
+  })
+  card.addEventListener('touchmove', (e) => {
+    if (drawerDrag) e.preventDefault()
+  }, { passive: false })
+  card.addEventListener('pointermove', (e) => {
+    if (!drawerDrag) return
+    drawerDx = Math.min(0, e.clientX - drawerStartX)
+    card.style.transform = 'translateX(' + drawerDx + 'px)'
+  })
+  const release = () => {
+    if (!drawerDrag) return
+    drawerDrag = false
+    if (drawerDx < -80) {
+      card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      card.style.transform = 'translateX(-100%)'
+      mask.classList.remove('show')
+      clearTimeout(drawerCloseTimer)
+      drawerCloseTimer = setTimeout(() => { mask.classList.add('hidden'); card.style.transition = ''; card.style.transform = '' }, 300)
+    } else {
+      card.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1)'
+      card.style.transform = ''
+    }
+    drawerDx = 0
+  }
+  card.addEventListener('pointerup', release)
+  card.addEventListener('pointercancel', release)
+}
+
+// ---------- 随机抽取 ----------
+function goRandom() {
+  hideAllViews()
+  refs.rnd.classList.remove('hidden')
+  showRandomHome()
+}
+function goEditMain() {
+  hideAllViews()
+  refs.edit.classList.remove('hidden')
+}
+function showRandomHome() {
+  RND.ensureDefaultPreset()
+  refs.rndHome.classList.remove('hidden')
+  refs.rndDraw.classList.add('hidden')
+  refs.rndEdit.classList.add('hidden')
+  rndState.currentName = ''
+  rndState.originalName = ''
+  rndState.entries = []
+  renderRndPresetList()
+}
+function validRndEntries(list) {
+  return (list || rndState.entries).filter((e) => String(e.name || '').trim().length > 0)
+}
+function rndCount() {
+  return validRndEntries().length
+}
+function renderRndPresetList() {
+  const presets = RND.loadPresets()
+  const names = Object.keys(presets).sort(RND.compareText)
+  const list = refs.rndPresetList
+  list.innerHTML = ''
+  if (!names.length) {
+    const empty = document.createElement('div')
+    empty.className = 'rnd-empty'
+    empty.textContent = '还没有预设，点击右上角新建'
+    list.appendChild(empty)
+    return
+  }
+  names.forEach((name) => {
+    const row = document.createElement('div')
+    row.className = 'rnd-preset-item'
+    row.dataset.name = name
+    row.innerHTML =
+      '<span class="rnd-preset-name" title="' + esc(name) + '">' + esc(name) + '</span>' +
+      '<div class="rnd-preset-actions">' +
+        '<button class="rnd-act rnd-act-edit" type="button">编辑</button>' +
+        '<span class="rnd-preset-chev">&#8250;</span>' +
+      '</div>'
+    list.appendChild(row)
+  })
+}
+function onRndPresetListClick(e) {
+  const row = e.target.closest('.rnd-preset-item')
+  if (!row) return
+  const name = row.dataset.name
+  if (e.target.classList.contains('rnd-act-edit')) { loadRndPreset(name, 'edit'); return }
+  loadRndPreset(name, 'draw')
+}
+function loadRndPreset(name, goTo) {
+  const p = RND.getPreset(name)
+  if (!p) { toast('预设不存在或已删除'); return }
+  rndState.currentName = name
+  rndState.originalName = name
+  rndState.entries = (p.entries || []).map((e) => ({ id: e.id, name: e.name, weight: RND.clampWeight(e.weight) }))
+  refs.rndDrawTitle.textContent = name
+  refs.rndDrawSub.textContent = rndCount() + ' 条'
+  renderRndPreview()
+  resetDrawPanel()
+  if (goTo === 'edit') { goRndEdit('home'); return }
+  if (!rndCount()) { toast('该预设暂无条目'); goRndEdit('home'); return }
+  refs.rndHome.classList.add('hidden')
+  refs.rndEdit.classList.add('hidden')
+  refs.rndDraw.classList.remove('hidden')
+}
+function onRndDrawBack() { showRandomHome() }
+function goRndEdit(from) {
+  rndState.editFrom = from || 'home'
+  refs.rndHome.classList.add('hidden')
+  refs.rndDraw.classList.add('hidden')
+  refs.rndEdit.classList.remove('hidden')
+  refs.rndEditTitle.textContent = rndState.currentName || '编辑预设'
+  refs.rndEditSub.textContent = rndCount() + ' 条'
+  refs.rndEditStatus.textContent = ''
+  refs.rndDelModal.classList.add('hidden')
+  renderRndEntries()
+}
+function onRndEditBack() {
+  if (rndState.editFrom === 'draw') {
+    refs.rndEdit.classList.add('hidden')
+    refs.rndDraw.classList.remove('hidden')
+    refs.rndDrawSub.textContent = rndCount() + ' 条'
+    renderRndPreview()
+  } else showRandomHome()
+}
+function resetDrawPanel() {
+  refs.rndCount.value = 1
+  refs.rndReplaceToggle.classList.remove('on')
+  refs.rndReplaceToggle.setAttribute('aria-checked', 'false')
+  refs.rndReplaceLabel.textContent = '放回抽取'
+  refs.rndReplaceField.hidden = true
+  refs.rndStatus.textContent = ''
+  refs.rndResult.classList.add('hidden')
+}
+function openRndNameModal() {
+  rndNameMode = 'new'
+  refs.rndNameTitle.textContent = '新建预设'
+  refs.rndNameInput.value = ''
+  refs.rndNameModal.classList.remove('hidden')
+  refs.rndNameInput.focus()
+}
+
+function openRndRenameModal() {
+  if (!rndState.currentName) return
+  rndNameMode = 'rename'
+  refs.rndNameTitle.textContent = '重命名预设'
+  refs.rndNameInput.value = rndState.currentName
+  refs.rndNameModal.classList.remove('hidden')
+  refs.rndNameInput.focus()
+  refs.rndNameInput.setSelectionRange(refs.rndNameInput.value.length, refs.rndNameInput.value.length)
+}
+function closeRndNameModal() { refs.rndNameModal.classList.add('hidden') }
+function confirmRndNameModal() {
+  const name = refs.rndNameInput.value.trim()
+  if (!name) { toast('请输入预设名'); return }
+  if (rndNameMode === 'rename') {
+    if (name === rndState.currentName) { closeRndNameModal(); return }
+    if (RND.getPreset(name)) { toast('已存在同名预设'); return }
+    const old = rndState.originalName
+    RND.savePreset(name, validRndEntries())
+    if (old && old !== name) RND.removePreset(old)
+    rndState.currentName = name
+    rndState.originalName = name
+    refs.rndEditTitle.textContent = name
+    closeRndNameModal()
+    toast('已重命名')
+    return
+  }
+  if (RND.getPreset(name)) { toast('已存在同名预设，请直接打开编辑'); return }
+  rndState.currentName = name
+  rndState.originalName = name
+  rndState.entries = []
+  closeRndNameModal()
+  goRndEdit('home')
+}
+function saveRndPreset() {
+  const name = String(rndState.currentName || '').trim()
+  if (!name) { refs.rndEditStatus.textContent = '请输入预设名'; toast('请输入预设名'); return }
+  const entries = validRndEntries()
+  if (!entries.length) { refs.rndEditStatus.textContent = '请至少添加一个条目'; toast('请至少添加一个条目'); return }
+  const oldName = rndState.originalName
+  RND.savePreset(name, entries)
+  if (oldName && oldName !== name) RND.removePreset(oldName)
+  rndState.originalName = name
+  rndState.currentName = name
+  rndState.entries = entries
+  refs.rndDrawTitle.textContent = name
+  refs.rndDrawSub.textContent = entries.length + ' 条'
+  refs.rndEditStatus.textContent = ''
+  renderRndPreview()
+  resetDrawPanel()
+  refs.rndEdit.classList.add('hidden')
+  refs.rndHome.classList.add('hidden')
+  refs.rndDraw.classList.remove('hidden')
+  toast('已保存预设')
+}
+function closeRndDelModal() { refs.rndDelModal.classList.add('hidden') }
+function onRndDelPreset() {
+  refs.rndDelName.textContent = rndState.currentName || '该预设'
+  refs.rndDelModal.classList.remove('hidden')
+}
+function confirmRndDelPreset() {
+  const name = rndState.currentName
+  closeRndDelModal()
+  if (!name) return
+  RND.removePreset(name)
+  toast('已删除预设')
+  showRandomHome()
+}
+function renderRndEntries() {
+  const sorted = RND.sortEntries(validRndEntries()).concat(rndState.entries.filter((e) => !String(e.name || '').trim()))
+  const wrap = refs.rndEntries
+  if (!sorted.length) {
+    wrap.innerHTML = '<div class="rnd-empty">暂无条目，点击下方新增</div>'
+    return
+  }
+  wrap.innerHTML = sorted.map((e) => {
+    const blank = !String(e.name || '').trim()
+    return '<div class="rnd-entry-card' + (blank ? ' rnd-entry-blank' : '') + '" data-id="' + e.id + '">' +
+      '<input class="rnd-entry-name" type="text" maxlength="24" placeholder="名称" value="' + esc(e.name) + '">' +
+      '<div class="rnd-weight-row">' +
+        '<button class="stepbtn xs rnd-w-minus" type="button" aria-label="减少权重">&#8722;</button>' +
+        '<input class="rnd-weight" type="number" min="1" max="99" value="' + RND.clampWeight(e.weight) + '">' +
+        '<button class="stepbtn xs rnd-w-plus" type="button" aria-label="增加权重">&#65291;</button>' +
+      '</div>' +
+    '</div>'
+  }).join('')
+}
+function updateRndEditSub() { refs.rndEditSub.textContent = rndCount() + ' 条' }
+function addRndEntry() {
+  if (rndState.entries.length >= RND.RND_MAX_ENTRIES) { toast('最多 99 条'); return }
+  const entry = RND.makeEntry('', 1)
+  rndState.entries.push(entry)
+  renderRndEntries()
+  updateRndEditSub()
+  requestAnimationFrame(() => {
+    const card = refs.rndEntries.querySelector('.rnd-entry-card[data-id="' + entry.id + '"]')
+    const inp = card && card.querySelector('.rnd-entry-name')
+    if (inp) { inp.focus(); inp.select() }
+  })
+}
+function removeRndEntry(id) {
+  rndState.entries = rndState.entries.filter((x) => x.id !== id)
+  renderRndEntries()
+  updateRndEditSub()
+}
+function onRndEntriesClick(e) {
+  const card = e.target.closest('.rnd-entry-card')
+  if (!card) return
+  const id = card.dataset.id
+  const entry = rndState.entries.find((x) => x.id === id)
+  if (!entry) return
+  const wInput = card.querySelector('.rnd-weight')
+  if (e.target.classList.contains('rnd-w-minus')) {
+    if (entry.weight <= 1) removeRndEntry(id)
+    else { entry.weight--; if (wInput) wInput.value = entry.weight }
+  } else if (e.target.classList.contains('rnd-w-plus')) {
+    if (entry.weight >= RND.RND_MAX_WEIGHT) { toast('权重最大 99'); return }
+    entry.weight++
+    if (wInput) wInput.value = entry.weight
+  }
+}
+function onRndEntriesInput(e) {
+  const card = e.target.closest('.rnd-entry-card')
+  if (!card) return
+  const entry = rndState.entries.find((x) => x.id === card.dataset.id)
+  if (!entry) return
+  if (e.target.classList.contains('rnd-entry-name')) {
+    entry.name = e.target.value
+    card.classList.toggle('rnd-entry-blank', !String(entry.name).trim())
+    updateRndEditSub()
+  } else if (e.target.classList.contains('rnd-weight')) {
+    const raw = e.target.value
+    if (parseInt(raw, 10) === 0) { removeRndEntry(card.dataset.id); return }
+    const w = RND.clampWeight(raw)
+    entry.weight = w
+    if (String(w) !== raw) e.target.value = w
+  }
+}
+function onRndEntriesFocusOut(e) {
+  if (e.target.classList.contains('rnd-entry-name')) {
+    const rt = e.relatedTarget
+    if (rt && rt.closest && rt.closest('.rnd-entry-card')) return
+    const card = e.target.closest('.rnd-entry-card')
+    const entry = card && rndState.entries.find((x) => x.id === card.dataset.id)
+    if (entry) entry.name = String(entry.name).trim()
+    rndState.entries = RND.sortEntries(validRndEntries()).concat(rndState.entries.filter((x) => !String(x.name || '').trim()))
+    renderRndEntries()
+    updateRndEditSub()
+  } else if (e.target.classList.contains('rnd-weight')) {
+    const card = e.target.closest('.rnd-entry-card')
+    if (!card) return
+    const entry = rndState.entries.find((x) => x.id === card.dataset.id)
+    if (!entry) return
+    e.target.value = entry.weight
+  }
+}
+function noReplace() { return refs.rndReplaceToggle.classList.contains('on') }
+function countMax() { return Math.max(1, rndCount()) }
+function onRndCountMinus() {
+  let v = parseInt(refs.rndCount.value, 10) || 1
+  v--
+  if (v < 1) v = 1
+  refs.rndCount.value = v
+  updateRndReplaceField()
+}
+function onRndCountPlus() {
+  let v = parseInt(refs.rndCount.value, 10) || 1
+  if (v >= RND.RND_MAX_COUNT) return
+  v++
+  if (noReplace() && v > countMax()) { toast('最多 ' + countMax() + ' 个'); return }
+  refs.rndCount.value = v
+  updateRndReplaceField()
+}
+function onRndCountInput() {
+  let v = parseInt(refs.rndCount.value, 10) || 1
+  if (v < 1) v = 1
+  if (noReplace()) {
+    if (v > countMax()) v = countMax()
+  } else if (v > RND.RND_MAX_COUNT) {
+    v = RND.RND_MAX_COUNT
+  }
+  refs.rndCount.value = v
+  updateRndReplaceField()
+}
+function updateRndReplaceField() {
+  const v = parseInt(refs.rndCount.value, 10) || 1
+  refs.rndReplaceField.hidden = v <= 1
+}
+function onRndReplaceToggle() {
+  const on = refs.rndReplaceToggle.classList.toggle('on')
+  refs.rndReplaceToggle.setAttribute('aria-checked', on ? 'true' : 'false')
+  refs.rndReplaceLabel.textContent = on ? '不放回抽取' : '放回抽取'
+  if (on) {
+    const max = countMax()
+    let v = parseInt(refs.rndCount.value, 10) || 1
+    if (v > max) refs.rndCount.value = max
+  }
+  updateRndReplaceField()
+}
+function ensureRndAudio() {
+  if (rndAudioCtx) return rndAudioCtx
+  const AC = window.AudioContext || window.webkitAudioContext
+  if (!AC) return null
+  try { rndAudioCtx = new AC() } catch (e) { rndAudioCtx = null }
+  return rndAudioCtx
+}
+function playRndSound() {
+  if (!rndSoundOn) return
+  const ctx = ensureRndAudio()
+  if (!ctx) return
+  // WebView 下首次 AudioContext 常处于 suspended，resume 是异步的，
+  // 需等它就绪后再建节点，否则 osc.start 可能被丢弃。
+  const ready = ctx.state === 'suspended'
+    ? (typeof ctx.resume === 'function' ? ctx.resume() : Promise.resolve())
+    : Promise.resolve()
+  const play = () => {
+    const t0 = ctx.currentTime
+    const master = ctx.createGain()
+    // 总输出增益：0.0001 -> 1 -> 0.0001，既能听清又不爆音
+    master.gain.setValueAtTime(0.0001, t0)
+    master.gain.exponentialRampToValueAtTime(1, t0 + 0.014)
+    master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.36)
+    master.connect(ctx.destination)
+    const mk = (freq, start, dur, peak) => {
+      const osc = ctx.createOscillator()
+      const g = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      g.gain.setValueAtTime(0.0001, t0 + start)
+      g.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.012)
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur)
+      osc.connect(g)
+      g.connect(master)
+      osc.start(t0 + start)
+      osc.stop(t0 + start + dur + 0.02)
+    }
+    // 固定的“叮”揭晓音：先一个落点，再上扬泛音，参数写死，每次一致
+    mk(880, 0, 0.34, 0.16)
+    mk(1318, 0.05, 0.30, 0.10)
+  }
+  try {
+    if (ready && typeof ready.then === 'function') ready.then(play).catch(() => {})
+    else play()
+  } catch (e) {}
+}
+function onRndSoundToggle() {
+  rndSoundOn = !rndSoundOn
+  refs.rndSoundOn.classList.toggle('hidden', !rndSoundOn)
+  refs.rndSoundOff.classList.toggle('hidden', rndSoundOn)
+  refs.rndSound.setAttribute('aria-pressed', rndSoundOn ? 'true' : 'false')
+}
+function onRndDrawClick() {
+  const valid = validRndEntries()
+  if (!valid.length) { refs.rndStatus.textContent = '当前预设没有条目'; toast('当前预设没有条目'); return }
+  const count = parseInt(refs.rndCount.value, 10) || 1
+  const withoutReplacement = refs.rndReplaceToggle.classList.contains('on')
+  const results = RND.drawEntries(valid, count, withoutReplacement)
+  renderRndResult(results, count)
+  playRndSound()
+  if (withoutReplacement && results.length < count) refs.rndStatus.textContent = '本次仅抽到 ' + results.length + ' 项'
+  else refs.rndStatus.textContent = ''
+}
+function renderRndPreview() {
+  const box = refs.rndPreview
+  const valid = validRndEntries()
+  if (!valid.length) { box.innerHTML = '<span class="rnd-preview-empty">暂无条目</span>'; return }
+  box.innerHTML = valid.map((e) => '<span class="rnd-preview-chip">' + esc(e.name) + '</span>').join('')
+}
+function renderRndResult(results, requested) {
+  const box = refs.rndResult
+  box.classList.remove('hidden')
+  box.innerHTML = '<div class="rnd-result-grid">' + results.map((r) => '<span class="rnd-result-chip">' + esc(r ? r.name : '无') + '</span>').join('') + '</div>'
+}
+
+
 // ---------- 初始化 ----------
 async function init() {
   state.assets = await loadAssets()
@@ -873,6 +1392,36 @@ async function init() {
   refs.presetModalList.addEventListener('click', onPresetListClick)
   attachAIFollow()
   refs.aiGenerate.addEventListener('click', generateAI)
+  document.querySelectorAll('.menu-open').forEach((b) => b.addEventListener('click', openDrawer))
+  refs.drawer.addEventListener('click', (e) => { if (e.target === refs.drawer) closeDrawer() })
+  refs.drawerCard.addEventListener('click', onDrawerItemClick)
+  setupDrawerDrag()
+  refs.rndNew.addEventListener('click', openRndNameModal)
+  refs.rndBack.addEventListener('click', onRndDrawBack)
+  refs.rndEditBtn.addEventListener('click', () => goRndEdit('draw'))
+  refs.rndCountMinus.addEventListener('click', onRndCountMinus)
+  refs.rndCountPlus.addEventListener('click', onRndCountPlus)
+  refs.rndCount.addEventListener('input', onRndCountInput)
+  refs.rndReplaceToggle.addEventListener('click', onRndReplaceToggle)
+  refs.rndSound.addEventListener('click', onRndSoundToggle)
+  refs.rndSound.setAttribute('aria-pressed', rndSoundOn ? 'true' : 'false')
+  refs.rndDrawBtn.addEventListener('click', onRndDrawClick)
+  refs.rndEditBack.addEventListener('click', onRndEditBack)
+  refs.rndEditTitle.addEventListener('click', openRndRenameModal)
+  refs.rndSave.addEventListener('click', saveRndPreset)
+  refs.rndDelPreset.addEventListener('click', onRndDelPreset)
+  refs.rndDelNo.addEventListener('click', closeRndDelModal)
+  refs.rndDelYes.addEventListener('click', confirmRndDelPreset)
+  refs.rndDelModal.addEventListener('click', (e) => { if (e.target === refs.rndDelModal) closeRndDelModal() })
+  refs.rndAddEntry.addEventListener('click', addRndEntry)
+  refs.rndEntries.addEventListener('click', onRndEntriesClick)
+  refs.rndEntries.addEventListener('input', onRndEntriesInput)
+  refs.rndEntries.addEventListener('focusout', onRndEntriesFocusOut)
+  refs.rndPresetList.addEventListener('click', onRndPresetListClick)
+  refs.rndNameCancel.addEventListener('click', closeRndNameModal)
+  refs.rndNameConfirm.addEventListener('click', confirmRndNameModal)
+  refs.rndNameModal.addEventListener('click', (e) => { if (e.target === refs.rndNameModal) closeRndNameModal() })
+  refs.rndNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmRndNameModal() })
   refs.aiStop.addEventListener('click', stopAI)
   refs.imgSwap.addEventListener('click', swapPortrait)
 

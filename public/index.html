@@ -14,7 +14,8 @@
     <!-- 阶段一：编辑信息 -->
     <section id="edit-view" class="view">
       <header class="topbar">
-        <div>
+        <button class="iconbtn menu-open" type="button" aria-label="打开菜单">&#9776;</button>
+        <div class="title-center">
           <h1>三国杀武将 DIY</h1>
           <p class="subtitle">录入武将信息</p>
         </div>
@@ -179,6 +180,78 @@
         <button id="ai-save-config" class="primary" type="button">保存配置</button>
       </div>
     </section>
+    <!-- 随机抽取（页面） -->
+    <section id="random-view" class="view hidden">
+      <div id="rnd-home" class="rnd-screen">
+        <header class="topbar">
+          <button class="iconbtn menu-open" type="button" aria-label="打开菜单">&#9776;</button>
+          <div class="title-center">
+            <h1>随机抽取</h1>
+            <p class="subtitle">选择预设进行抽取</p>
+          </div>
+          <button id="rnd-new" class="ghost sm" type="button">新建</button>
+        </header>
+        <div id="rnd-preset-list" class="rnd-preset-list"></div>
+      </div>
+
+      <div id="rnd-draw" class="rnd-screen hidden">
+        <header class="topbar">
+          <button id="rnd-back" class="iconbtn" type="button" aria-label="返回列表">&#8249;</button>
+          <div class="title-center">
+            <h1 id="rnd-draw-title">抽取</h1>
+            <p id="rnd-draw-sub" class="subtitle"></p>
+          </div>
+          <div class="topbar-actions">
+            <button id="rnd-sound" class="iconbtn sound" type="button" aria-label="音效开关" title="音效开关">
+              <svg id="rnd-sound-on" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+              <svg id="rnd-sound-off" class="hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="22" y1="9" x2="16" y2="15"></line><line x1="16" y1="9" x2="22" y2="15"></line></svg>
+            </button>
+            <button id="rnd-edit-btn" class="ghost sm" type="button">编辑</button>
+          </div>
+        </header>
+        <div class="card-form">
+          <div class="field">
+            <label>条目预览</label>
+            <div id="rnd-preview" class="rnd-preview"></div>
+          </div>
+          <div class="field">
+            <label>抽取数量</label>
+            <div class="hp-row">
+              <button id="rnd-count-minus" class="stepbtn" type="button" aria-label="减少数量">&#8722;</button>
+              <input id="rnd-count" type="number" min="1" value="1" inputmode="numeric">
+              <button id="rnd-count-plus" class="stepbtn" type="button" aria-label="增加数量">&#65291;</button>
+            </div>
+          </div>
+          <div class="field" id="rnd-replace-field" hidden>
+            <label>抽取方式</label>
+            <div class="switch-row">
+              <span class="switch-label" id="rnd-replace-label">放回抽取</span>
+              <button id="rnd-replace-toggle" class="switch" type="button" role="switch" aria-checked="false"></button>
+            </div>
+          </div>
+          <p id="rnd-status" class="ai-status"></p>
+          <button id="rnd-draw-btn" class="primary" type="button">开始抽取</button>
+          <div id="rnd-result" class="rnd-result hidden"></div>
+        </div>
+      </div>
+
+      <div id="rnd-edit" class="rnd-screen hidden">
+        <header class="topbar">
+          <button id="rnd-edit-back" class="iconbtn" type="button" aria-label="返回抽取">&#8249;</button>
+          <div class="title-center">
+            <h1 id="rnd-edit-title">编辑预设</h1>
+            <p id="rnd-edit-sub" class="subtitle"></p>
+          </div>
+          <button id="rnd-del-preset" class="ghost sm danger" type="button">删除</button>
+          <button id="rnd-save" class="ghost sm" type="button">保存</button>
+        </header>
+        <div class="card-form">
+          <p id="rnd-edit-status" class="ai-status"></p>
+          <div id="rnd-entries" class="rnd-entries"></div>
+          <button id="rnd-add-entry" class="ghost add" type="button">&#65291; 新增条目</button>
+        </div>
+      </div>
+    </section>
   </div>
   <div id="preset-modal" class="modal-mask hidden">
     <div class="modal-card">
@@ -199,6 +272,37 @@
         <button id="model-sheet-close" class="sheet-close" type="button" aria-label="关闭">×</button>
       </div>
       <div id="model-sheet-list" class="sheet-list"></div>
+    </div>
+  </div>
+  <div id="drawer" class="drawer-mask hidden">
+    <div class="drawer-card" id="drawer-card">
+      <div class="drawer-head">
+        <h3>功能</h3>
+      </div>
+      <nav class="drawer-nav">
+        <button class="drawer-item" type="button" data-module="edit">武将 DIY</button>
+        <button class="drawer-item" type="button" data-module="random">随机抽取</button>
+      </nav>
+    </div>
+  </div>
+  <div id="rnd-name-modal" class="modal-mask hidden">
+    <div class="modal-card">
+      <h3 id="rnd-name-title">保存预设</h3>
+      <input id="rnd-name-input" type="text" placeholder="输入预设名" autocomplete="off">
+      <div class="modal-actions">
+        <button id="rnd-name-cancel" class="ghost" type="button">取消</button>
+        <button id="rnd-name-confirm" class="primary sm" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+  <div id="rnd-del-modal" class="modal-mask hidden">
+    <div class="modal-card">
+      <h3>删除预设</h3>
+      <p class="modal-msg">确定要删除「<span id="rnd-del-name"></span>」吗？此操作不可撤销。</p>
+      <div class="modal-actions">
+        <button id="rnd-del-no" class="ghost" type="button">取消</button>
+        <button id="rnd-del-yes" class="danger-btn" type="button">删除</button>
+      </div>
     </div>
   </div>
   <div id="toast" class="toast hidden"></div>
